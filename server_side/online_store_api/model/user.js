@@ -12,8 +12,15 @@ const userSchema = new mongoose.Schema({
   },
   email: {
     type: String,
+    required: true,
     unique: true,
-    sparse: true
+    sparse: true,
+    validate: {
+      validator: function(v) {
+        return v && v.trim().length > 0 && v !== 'null';
+      },
+      message: 'Email cannot be null or empty'
+    }
   },
   password: {
     type: String,
@@ -38,6 +45,15 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
+});
+
+// Add pre-save middleware to ensure email is always valid
+userSchema.pre('save', function(next) {
+  if (!this.email || this.email === 'null' || this.email.trim() === '') {
+    return next(new Error('Email is required and cannot be null'));
+  }
+  this.email = this.email.trim().toLowerCase();
+  next();
 });
 
 const User = mongoose.model('User', userSchema);
