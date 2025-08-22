@@ -17,7 +17,8 @@ router.get('/', asyncHandler(async (req, res) => {
         .populate('proSubCategoryId', 'id name')
         .populate('proBrandId', 'id name')
         .populate('proVariantTypeId', 'id type')
-        .populate('proVariantId', 'id name');
+        .populate('proVariantId', 'id name')
+        .populate('sellerId', 'name sellerProfile.businessName sellerProfile.verified');
         res.json({ success: true, message: "Products retrieved successfully.", data: products });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -33,7 +34,8 @@ router.get('/:id', asyncHandler(async (req, res) => {
             .populate('proSubCategoryId', 'id name')
             .populate('proBrandId', 'id name')
             .populate('proVariantTypeId', 'id name')
-            .populate('proVariantId', 'id name');
+            .populate('proVariantId', 'id name')
+            .populate('sellerId', 'name sellerProfile.businessName sellerProfile.verified');
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found." });
         }
