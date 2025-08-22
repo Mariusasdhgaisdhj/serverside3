@@ -36,6 +36,7 @@ app.use('/products', require('./routes/product'));
 app.use('/couponCodes', require('./routes/couponCode'));
 app.use('/posters', require('./routes/poster'));
 app.use('/users', require('./routes/user'));
+app.use('/posts', require('./routes/post'));
 app.use('/orders', require('./routes/order'));
 app.use('/payment', require('./routes/payment'));
 app.use('/notification', require('./routes/notification'));
@@ -44,6 +45,16 @@ app.use('/notification', require('./routes/notification'));
 app.get('/', asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'API working successfully', data: null });
 }));
+
+// Minimal pages for PayPal return/cancel (works even for mobile apps)
+app.get('/paypal-success', (req, res) => {
+  res.set('Content-Type', 'text/html');
+  res.send('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body><h3>Payment successful</h3><p>You can close this page and return to the app.</p></body></html>');
+});
+app.get('/paypal-cancel', (req, res) => {
+  res.set('Content-Type', 'text/html');
+  res.send('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body><h3>Payment cancelled</h3><p>You can close this page and return to the app.</p></body></html>');
+});
 
 // Error handler
 app.use((error, req, res, next) => {
