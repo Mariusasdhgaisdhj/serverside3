@@ -1,9 +1,15 @@
 {
   "version": 2,
-  "functions": {
-    "online_store_api/index.js": { "runtime": "nodejs20.x" }
-  },
+  "builds": [
+    {
+      "src": "online_store_api/index.js",
+      "use": "@vercel/node"
+    }
+  ],
   "routes": [
-    { "src": "/(.*)", "dest": "/online_store_api/index.js" }
+    {
+      "src": "/(.*)",
+      "dest": "/online_store_api/index.js"
+    }
   ]
 }
