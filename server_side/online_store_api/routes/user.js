@@ -125,15 +125,47 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 
 // Sync user from external auth (e.g., Supabase)
 router.post('/sync-external', asyncHandler(async (req, res) => {
-    const { externalAuthId, name } = req.body || {};
+    const { externalAuthId, name, email } = req.body || {};
     if (!externalAuthId || !name) {
         return res.status(400).json({ success: false, message: 'externalAuthId and name required' });
     }
-    let user = await User.findOne({ externalAuthId });
-    if (!user) {
-        user = await User.create({ externalAuthId, name, password: 'external' });
+    
+    // Ensure email is provided and not null
+    if (!email || email === 'null' || email === '') {
+        return res.status(400).json({ success: false, message: 'Valid email is required' });
     }
-    res.json({ success: true, message: 'User synced', data: user });
+    
+    try {
+        // Find by external id or email
+        let user = await User.findOne({ $or: [ { externalAuthId }, { email } ] });
+        
+        if (!user) {
+            // Create new user with validated data
+            user = await User.create({ 
+                externalAuthId, 
+                name, 
+                email, 
+                password: 'external' 
+            });
+        } else {
+            // Update existing user
+            user.externalAuthId = externalAuthId;
+            user.name = name;
+            user.email = email;
+            await user.save();
+        }
+        
+        res.json({ success: true, message: 'User synced', data: user });
+    } catch (error) {
+        if (error.code === 11000) {
+            // Handle duplicate key error
+            return res.status(400).json({ 
+                success: false, 
+                message: 'User with this email already exists. Please use a different email or contact support.' 
+            });
+        }
+        res.status(500).json({ success: false, message: error.message });
+    }
 }));
 
 // Promote a user to admin (protect this route in production)
