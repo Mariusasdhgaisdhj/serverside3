@@ -54,8 +54,17 @@ router.post('/', asyncHandler(async (req, res) => {
         console.log('Request body:', req.body);
         console.log('Request files:', req.files);
 
+        // Create a memory storage for Vercel deployment
+        const memoryStorage = multer.memoryStorage();
+        const uploadToMemory = multer({ 
+            storage: memoryStorage,
+            limits: {
+                fileSize: 1024 * 1024 * 5 // limit filesize to 5MB
+            }
+        });
+
         // Execute the Multer middleware to handle multiple file fields
-        uploadProduct.fields([
+        uploadToMemory.fields([
             { name: 'image1', maxCount: 1 },
             { name: 'image2', maxCount: 1 },
             { name: 'image3', maxCount: 1 },
@@ -97,7 +106,7 @@ router.post('/', asyncHandler(async (req, res) => {
             fields.forEach((field, index) => {
                 if (req.files && req.files[field] && req.files[field].length > 0) {
                     const file = req.files[field][0];
-                    // Use a placeholder URL for now since localhost won't work on Vercel
+                    // Use a placeholder URL for now since we can't save files on Vercel
                     const imageUrl = `https://via.placeholder.com/400x400/cccccc/666666?text=Product+Image+${index + 1}`;
                     imageUrls.push({ image: index + 1, url: imageUrl });
                     console.log(`Added image ${index + 1}: ${imageUrl}`);
@@ -142,63 +151,6 @@ router.post('/', asyncHandler(async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 }));
-
-// create new product (JSON version for testing)
-router.post('/json', asyncHandler(async (req, res) => {
-    try {
-        console.log('=== JSON Product creation request received ===');
-        console.log('Request body:', req.body);
-
-        // Extract product data from the request body
-        const { sellerId, name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId } = req.body;
-
-        console.log('Extracted data:', {
-            sellerId, name, description, quantity, price, 
-            proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId
-        });
-
-        // Check if any required fields are missing
-        if (!name || !quantity || !price || !proCategoryId || !proSubCategoryId) {
-            console.log('Missing required fields');
-            return res.status(400).json({ success: false, message: "Required fields are missing." });
-        }
-
-        // Convert data types to ensure they match the schema
-        const productData = {
-            sellerId: sellerId,
-            name: String(name).trim(),
-            description: description ? String(description).trim() : '',
-            quantity: parseInt(quantity) || 0,
-            price: parseFloat(price) || 0,
-            offerPrice: offerPrice ? parseFloat(offerPrice) : undefined,
-            proCategoryId: proCategoryId,
-            proSubCategoryId: proSubCategoryId,
-            proBrandId: proBrandId || undefined,
-            proVariantTypeId: proVariantTypeId || undefined,
-            proVariantId: proVariantId || undefined,
-            images: [] // Empty images array for JSON version
-        };
-
-        console.log('Processed product data:', productData);
-
-        // Create a new product object with data (no images for JSON version)
-        const newProduct = new Product(productData);
-
-        console.log('Product object created:', newProduct);
-
-        // Save the new product to the database
-        const savedProduct = await newProduct.save();
-        console.log('Product saved successfully:', savedProduct._id);
-
-        // Send a success response back to the client
-        res.json({ success: true, message: "Product created successfully.", data: savedProduct });
-    } catch (error) {
-        // Handle any errors that occur during the process
-        console.error("Error creating product:", error);
-        res.status(500).json({ success: false, message: error.message });
-    }
-}));
-
 
 // Update a product
 router.put('/:id', asyncHandler(async (req, res) => {
