@@ -106,14 +106,23 @@ router.post('/', asyncHandler(async (req, res) => {
             fields.forEach((field, index) => {
                 if (req.files && req.files[field] && req.files[field].length > 0) {
                     const file = req.files[field][0];
-                    // Use a placeholder URL for now since we can't save files on Vercel
-                    const imageUrl = `https://via.placeholder.com/400x400/cccccc/666666?text=Product+Image+${index + 1}`;
+                    // Use a more reliable placeholder URL
+                    const imageUrl = `https://picsum.photos/400/400?random=${index + 1}`;
                     imageUrls.push({ image: index + 1, url: imageUrl });
                     console.log(`Added image ${index + 1}: ${imageUrl}`);
                 }
             });
 
             console.log('Image URLs:', imageUrls);
+
+            // Add a default image if no images were uploaded
+            if (imageUrls.length === 0) {
+                imageUrls.push({ 
+                    image: 1, 
+                    url: 'https://picsum.photos/400/400?random=999' 
+                });
+                console.log('Added default image for product without images');
+            }
 
             // Convert data types to ensure they match the schema
             const productData = {
