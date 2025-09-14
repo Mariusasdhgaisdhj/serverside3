@@ -8,10 +8,15 @@ const asyncHandler = require('express-async-handler');
 // Get all sub-categories
 router.get('/', asyncHandler(async (req, res) => {
     try {
-        const subCategories = await SubCategory.find().populate('categoryId').sort({'categoryId': 1});
+        const subCategories = await SubCategory.findAll();
         res.json({ success: true, message: "Sub-categories retrieved successfully.", data: subCategories });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('Error fetching sub-categories:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch sub-categories. Please check your database connection.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 }));
 
@@ -19,13 +24,18 @@ router.get('/', asyncHandler(async (req, res) => {
 router.get('/:id', asyncHandler(async (req, res) => {
     try {
         const subCategoryID = req.params.id;
-        const subCategory = await SubCategory.findById(subCategoryID).populate('categoryId');
+        const subCategory = await SubCategory.findById(subCategoryID);
         if (!subCategory) {
             return res.status(404).json({ success: false, message: "Sub-category not found." });
         }
         res.json({ success: true, message: "Sub-category retrieved successfully.", data: subCategory });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('Error fetching sub-category:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch sub-category. Please check your database connection.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 }));
 

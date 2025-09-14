@@ -8,10 +8,15 @@ const asyncHandler = require('express-async-handler');
 // Get all posters
 router.get('/', asyncHandler(async (req, res) => {
     try {
-        const posters = await Poster.find({});
+        const posters = await Poster.findAll();
         res.json({ success: true, message: "Posters retrieved successfully.", data: posters });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('Error fetching posters:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch posters. Please check your database connection.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 }));
 

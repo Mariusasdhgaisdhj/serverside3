@@ -8,20 +8,15 @@ const asyncHandler = require('express-async-handler');
 // Get all products (optionally filter by sellerId)
 router.get('/', asyncHandler(async (req, res) => {
     try {
-        const query = {};
-        if (req.query.sellerId) {
-            query.sellerId = req.query.sellerId;
-        }
-        const products = await Product.find(query)
-        .populate('proCategoryId', 'id name')
-        .populate('proSubCategoryId', 'id name')
-        .populate('proBrandId', 'id name')
-        .populate('proVariantTypeId', 'id type')
-        .populate('proVariantId', 'id name')
-        .populate('sellerId', 'name sellerProfile.businessName sellerProfile.verified');
+        const products = await Product.findAll(req.query.sellerId);
         res.json({ success: true, message: "Products retrieved successfully.", data: products });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('Error fetching products:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch products. Please check your database connection.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 }));
 
@@ -29,19 +24,18 @@ router.get('/', asyncHandler(async (req, res) => {
 router.get('/:id', asyncHandler(async (req, res) => {
     try {
         const productID = req.params.id;
-        const product = await Product.findById(productID)
-            .populate('proCategoryId', 'id name')
-            .populate('proSubCategoryId', 'id name')
-            .populate('proBrandId', 'id name')
-            .populate('proVariantTypeId', 'id name')
-            .populate('proVariantId', 'id name')
-            .populate('sellerId', 'name sellerProfile.businessName sellerProfile.verified');
+        const product = await Product.findById(productID);
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found." });
         }
         res.json({ success: true, message: "Product retrieved successfully.", data: product });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('Error fetching product:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch product. Please check your database connection.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 }));
 
@@ -142,14 +136,9 @@ router.post('/', asyncHandler(async (req, res) => {
 
             console.log('Processed product data:', productData);
 
-            // Create a new product object with data
-            const newProduct = new Product(productData);
-
-            console.log('Product object created:', newProduct);
-
-            // Save the new product to the database
-            const savedProduct = await newProduct.save();
-            console.log('Product saved successfully:', savedProduct._id);
+            // Create a new product in the database
+            const savedProduct = await Product.create(productData);
+            console.log('Product saved successfully:', savedProduct.id);
 
             // Send a success response back to the client
             res.json({ success: true, message: "Product created successfully.", data: savedProduct });
@@ -180,43 +169,39 @@ router.put('/:id', asyncHandler(async (req, res) => {
 
             const { name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId } = req.body;
 
-            // Find the product by ID
-            const productToUpdate = await Product.findById(productId);
-            if (!productToUpdate) {
-                return res.status(404).json({ success: false, message: "Product not found." });
-            }
+            // Prepare update data
+            const updateData = {};
+            if (name) updateData.name = name;
+            if (description) updateData.description = description;
+            if (quantity) updateData.quantity = quantity;
+            if (price) updateData.price = price;
+            if (offerPrice) updateData.offerPrice = offerPrice;
+            if (proCategoryId) updateData.proCategoryId = proCategoryId;
+            if (proSubCategoryId) updateData.proSubCategoryId = proSubCategoryId;
+            if (proBrandId) updateData.proBrandId = proBrandId;
+            if (proVariantTypeId) updateData.proVariantTypeId = proVariantTypeId;
+            if (proVariantId) updateData.proVariantId = proVariantId;
 
-            // Update product properties if provided
-            productToUpdate.name = name || productToUpdate.name;
-            productToUpdate.description = description || productToUpdate.description;
-            productToUpdate.quantity = quantity || productToUpdate.quantity;
-            productToUpdate.price = price || productToUpdate.price;
-            productToUpdate.offerPrice = offerPrice || productToUpdate.offerPrice;
-            productToUpdate.proCategoryId = proCategoryId || productToUpdate.proCategoryId;
-            productToUpdate.proSubCategoryId = proSubCategoryId || productToUpdate.proSubCategoryId;
-            productToUpdate.proBrandId = proBrandId || productToUpdate.proBrandId;
-            productToUpdate.proVariantTypeId = proVariantTypeId || productToUpdate.proVariantTypeId;
-            productToUpdate.proVariantId = proVariantId || productToUpdate.proVariantId;
-
-            // Iterate over the file fields to update images
+            // Handle image updates
             const fields = ['image1', 'image2', 'image3', 'image4', 'image5'];
+            const imageUpdates = [];
             fields.forEach((field, index) => {
                 if (req.files[field] && req.files[field].length > 0) {
                     const file = req.files[field][0];
                     const imageUrl = `http://localhost:3000/image/products/${file.filename}`;
-                    // Update the specific image URL in the images array
-                    let imageEntry = productToUpdate.images.find(img => img.image === (index + 1));
-                    if (imageEntry) {
-                        imageEntry.url = imageUrl;
-                    } else {
-                        // If the image entry does not exist, add it
-                        productToUpdate.images.push({ image: index + 1, url: imageUrl });
-                    }
+                    imageUpdates.push({ image: index + 1, url: imageUrl });
                 }
             });
 
-            // Save the updated product
-            await productToUpdate.save();
+            if (imageUpdates.length > 0) {
+                updateData.images = imageUpdates;
+            }
+
+            // Update the product
+            const updatedProduct = await Product.update(productId, updateData);
+            if (!updatedProduct) {
+                return res.status(404).json({ success: false, message: "Product not found." });
+            }
             res.json({ success: true, message: "Product updated successfully." });
         });
     } catch (error) {
@@ -229,13 +214,18 @@ router.put('/:id', asyncHandler(async (req, res) => {
 router.delete('/:id', asyncHandler(async (req, res) => {
     const productID = req.params.id;
     try {
-        const product = await Product.findByIdAndDelete(productID);
+        const product = await Product.delete(productID);
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found." });
         }
         res.json({ success: true, message: "Product deleted successfully." });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('Error deleting product:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to delete product. Please check your database connection.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 }));
 
