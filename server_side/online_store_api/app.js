@@ -1,9 +1,9 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const mongoose = require('mongoose');
 const asyncHandler = require('express-async-handler');
 const dotenv = require('dotenv');
+const { testConnection } = require('./config/supabase');
 dotenv.config();
 
 const app = express();
@@ -15,16 +15,16 @@ app.use('/image/products', express.static('public/products'));
 app.use('/image/category', express.static('public/category'));
 app.use('/image/poster', express.static('public/posters'));
 
-// Mongo connection (keep outside of handlers to allow reuse across invocations)
-if (!mongoose.connection.readyState) {
-  const URL = process.env.MONGO_URL;
-  if (URL) {
-    mongoose.connect(URL);
-    const db = mongoose.connection;
-    db.on('error', (error) => console.error(error));
-    db.once('open', () => console.log('Connected to Database'));
+// Supabase connection test
+testConnection().then(connected => {
+  if (connected) {
+    console.log('Connected to Supabase successfully');
+  } else {
+    console.error('Failed to connect to Supabase');
   }
-}
+}).catch(err => {
+  console.error('Supabase connection error:', err);
+});
 
 // Routes
 app.use('/categories', require('./routes/category'));
@@ -40,6 +40,7 @@ app.use('/posts', require('./routes/post'));
 app.use('/orders', require('./routes/order'));
 app.use('/payment', require('./routes/payment'));
 app.use('/notification', require('./routes/notification'));
+app.use('/migrate', require('./routes/migrate')); // Temporary migration endpoint
 
 // Root
 app.get('/', asyncHandler(async (req, res) => {

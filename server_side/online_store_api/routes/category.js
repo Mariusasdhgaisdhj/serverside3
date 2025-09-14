@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const Category = require('../model/category');
-const SubCategory = require('../model/subCategory');
-const Product = require('../model/product');
+const Category = require('../models/category');
+const SubCategory = require('../models/subCategory');
+const Product = require('../models/product');
 const { uploadCategory } = require('../uploadFile');
 const multer = require('multer');
 const asyncHandler = require('express-async-handler');
@@ -10,7 +10,7 @@ const asyncHandler = require('express-async-handler');
 // Get all categories
 router.get('/', asyncHandler(async (req, res) => {
     try {
-        const categories = await Category.find();
+        const categories = await Category.findAll();
         res.json({ success: true, message: "Categories retrieved successfully.", data: categories });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -57,12 +57,11 @@ router.post('/', asyncHandler(async (req, res) => {
             }
 
             try {
-                const newCategory = new Category({
+                const newCategory = await Category.create({
                     name: name,
                     image: imageUrl
                 });
-                await newCategory.save();
-                res.json({ success: true, message: "Category created successfully.", data: null });
+                res.json({ success: true, message: "Category created successfully.", data: newCategory });
             } catch (error) {
                 console.error("Error creating category:", error);
                 res.status(500).json({ success: false, message: error.message });
@@ -104,11 +103,11 @@ router.put('/:id', asyncHandler(async (req, res) => {
             }
 
             try {
-                const updatedCategory = await Category.findByIdAndUpdate(categoryID, { name: name, image: image }, { new: true });
+                const updatedCategory = await Category.update(categoryID, { name: name, image: image });
                 if (!updatedCategory) {
                     return res.status(404).json({ success: false, message: "Category not found." });
                 }
-                res.json({ success: true, message: "Category updated successfully.", data: null });
+                res.json({ success: true, message: "Category updated successfully.", data: updatedCategory });
             } catch (error) {
                 res.status(500).json({ success: false, message: error.message });
             }
@@ -127,20 +126,20 @@ router.delete('/:id', asyncHandler(async (req, res) => {
         const categoryID = req.params.id;
 
         // Check if any subcategories reference this category
-        const subcategories = await SubCategory.find({ categoryId: categoryID });
+        const subcategories = await SubCategory.findByCategoryId(categoryID);
         if (subcategories.length > 0) {
             return res.status(400).json({ success: false, message: "Cannot delete category. Subcategories are referencing it." });
         }
 
         // Check if any products reference this category
-        const products = await Product.find({ proCategoryId: categoryID });
-        if (products.length > 0) {
+        const products = await Product.findAll({ categoryId: categoryID });
+        if (products.data && products.data.length > 0) {
             return res.status(400).json({ success: false, message: "Cannot delete category. Products are referencing it." });
         }
 
         // If no subcategories or products are referencing the category, proceed with deletion
-        const category = await Category.findByIdAndDelete(categoryID);
-        if (!category) {
+        const deleted = await Category.delete(categoryID);
+        if (!deleted) {
             return res.status(404).json({ success: false, message: "Category not found." });
         }
         res.json({ success: true, message: "Category deleted successfully." });
