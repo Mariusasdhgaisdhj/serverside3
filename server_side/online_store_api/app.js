@@ -48,6 +48,37 @@ app.get('/', asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'API working successfully', data: null });
 }));
 
+// Test Supabase connection
+app.get('/test', asyncHandler(async (req, res) => {
+  try {
+    const { supabase } = require('./config/supabase');
+    const { data, error } = await supabase
+      .from('users')
+      .select('id')
+      .limit(1);
+    
+    if (error) {
+      res.json({ 
+        success: false, 
+        message: 'Supabase connection failed', 
+        error: error.message 
+      });
+    } else {
+      res.json({ 
+        success: true, 
+        message: 'Supabase connection successful', 
+        data: data 
+      });
+    }
+  } catch (err) {
+    res.json({ 
+      success: false, 
+      message: 'Supabase test failed', 
+      error: err.message 
+    });
+  }
+}));
+
 // Minimal pages for PayPal return/cancel (works even for mobile apps)
 app.get('/paypal-success', (req, res) => {
   res.set('Content-Type', 'text/html');

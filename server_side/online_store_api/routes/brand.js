@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const Brand = require('../model/brand');
-const Product = require('../model/product');
+const Brand = require('../models/brand');
+const Product = require('../models/product');
 const asyncHandler = require('express-async-handler');
 
 // Get all brands
 router.get('/', asyncHandler(async (req, res) => {
     try {
-        const brands = await Brand.find().populate('subcategoryId').sort({'subcategoryId': 1});
+        const brands = await Brand.findAll();
         res.json({ success: true, message: "Brands retrieved successfully.", data: brands });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
