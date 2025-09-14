@@ -67,10 +67,14 @@ router.post('/', asyncHandler(async (req, res) => {
       });
     }
     
+    const { category, tags } = req.body || {};
+    
     const post = await Post.create({ 
       user_id: userId, // Use user_id for Supabase
       title: title.trim(), 
-      content: content.trim() 
+      content: content.trim(),
+      category: category || 'General',
+      tags: tags || []
     });
     
     res.json({ 
