@@ -56,25 +56,58 @@ app.get('/test', asyncHandler(async (req, res) => {
       .from('users')
       .select('id')
       .limit(1);
-    
+
     if (error) {
-      res.json({ 
-        success: false, 
-        message: 'Supabase connection failed', 
-        error: error.message 
+      res.json({
+        success: false,
+        message: 'Supabase connection failed',
+        error: error.message
       });
     } else {
-      res.json({ 
-        success: true, 
-        message: 'Supabase connection successful', 
-        data: data 
+      res.json({
+        success: true,
+        message: 'Supabase connection successful',
+        data: data
       });
     }
   } catch (err) {
-    res.json({ 
-      success: false, 
-      message: 'Supabase test failed', 
-      error: err.message 
+    res.json({
+      success: false,
+      message: 'Supabase test failed',
+      error: err.message
+    });
+  }
+}));
+
+// Test users table specifically
+app.get('/test-users', asyncHandler(async (req, res) => {
+  try {
+    const { supabase } = require('./config/supabase');
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .limit(5);
+
+    if (error) {
+      res.json({
+        success: false,
+        message: 'Users table test failed',
+        error: error.message,
+        code: error.code
+      });
+    } else {
+      res.json({
+        success: true,
+        message: 'Users table accessible',
+        data: data,
+        count: data.length
+      });
+    }
+  } catch (err) {
+    res.json({
+      success: false,
+      message: 'Users table test failed',
+      error: err.message
     });
   }
 }));
