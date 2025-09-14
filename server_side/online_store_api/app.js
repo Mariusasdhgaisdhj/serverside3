@@ -41,7 +41,7 @@ app.use('/posts', require('./routes/post'));
 app.use('/orders', require('./routes/order'));
 app.use('/payment', require('./routes/payment'));
 app.use('/notification', require('./routes/notification'));
-app.use('/migrate', require('./routes/migrate')); // Temporary migration endpoint
+// app.use('/migrate', require('./routes/migrate')); // Temporary migration endpoint - REMOVED
 
 // Root
 app.get('/', asyncHandler(async (req, res) => {
