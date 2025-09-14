@@ -1,7 +1,7 @@
 const express = require('express');
 const asyncHandler = require('express-async-handler');
 const router = express.Router();
-const User = require('../model/user');
+const User = require('../models/user');
 
 // Get all users
 router.get('/', asyncHandler(async (req, res) => {

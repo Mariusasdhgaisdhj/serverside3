@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const Variant = require('../model/variant');
-const Product = require('../model/product');
+const Variant = require('../models/variant');
+const Product = require('../models/product');
 const asyncHandler = require('express-async-handler');
 
 // Get all variants

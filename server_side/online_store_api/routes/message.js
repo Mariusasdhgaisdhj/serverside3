@@ -1,7 +1,7 @@
 const express = require('express');
 const asyncHandler = require('express-async-handler');
 const router = express.Router();
-const { Conversation, Message } = require('../model/message');
+const { Conversation, Message } = require('../models/message');
 
 // Create or get conversation between buyer and seller
 router.post('/conversation', asyncHandler(async (req, res) => {

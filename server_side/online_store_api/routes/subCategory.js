@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const SubCategory = require('../model/subCategory');
-const Brand = require('../model/brand');
-const Product = require('../model/product');
+const SubCategory = require('../models/subCategory');
+const Brand = require('../models/brand');
+const Product = require('../models/product');
 const asyncHandler = require('express-async-handler');
 
 // Get all sub-categories

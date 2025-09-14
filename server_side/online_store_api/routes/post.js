@@ -1,8 +1,8 @@
 const express = require('express');
 const asyncHandler = require('express-async-handler');
 const router = express.Router();
-const Post = require('../model/post');
-const User = require('../model/user');
+const Post = require('../models/post');
+const User = require('../models/user');
 
 // list posts
 router.get('/', asyncHandler(async (req, res) => {

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const asyncHandler = require('express-async-handler');
-const Notification = require('../model/notification');
+const Notification = require('../models/notification');
 const OneSignal = require('onesignal-node');
 const dotenv = require('dotenv');
 dotenv.config();

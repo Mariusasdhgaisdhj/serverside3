@@ -1,8 +1,8 @@
 const express = require('express');
 const asyncHandler = require('express-async-handler');
 const router = express.Router();
-const Coupon = require('../model/couponCode'); 
-const Product = require('../model/product');
+const Coupon = require('../models/coupon'); 
+const Product = require('../models/product');
 
 // Get all coupons
 router.get('/', asyncHandler(async (req, res) => {

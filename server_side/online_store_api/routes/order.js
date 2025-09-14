@@ -1,7 +1,7 @@
 const express = require('express');
 const asyncHandler = require('express-async-handler');
 const router = express.Router();
-const Order = require('../model/order');
+const Order = require('../models/order');
 
 // Get all orders
 router.get('/', asyncHandler(async (req, res) => {
