@@ -1,21 +1,32 @@
 const express = require('express');
 const asyncHandler = require('express-async-handler');
 const router = express.Router();
-const Post = require('../models/post');
+const { Post, Comment } = require('../models/post');
 const User = require('../models/user');
 
 // list posts
 router.get('/', asyncHandler(async (req, res) => {
   try {
-    const posts = await Post.find()
-      .sort({ createdAt: -1 })
-      .populate('userId', 'name')
-      .populate('comments.userId', 'name');
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
     
-    res.json({ success: true, message: 'Posts fetched successfully', data: posts });
+    const result = await Post.findAll(page, limit);
+    
+    res.json({ 
+      success: true, 
+      message: 'Posts fetched successfully', 
+      data: result.data,
+      total: result.total,
+      page: page,
+      limit: limit
+    });
   } catch (error) {
     console.error('Error fetching posts:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch posts', data: null });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch posts', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 }));
 
@@ -57,13 +68,10 @@ router.post('/', asyncHandler(async (req, res) => {
     }
     
     const post = await Post.create({ 
-      userId, 
+      user_id: userId, // Use user_id for Supabase
       title: title.trim(), 
       content: content.trim() 
     });
-    
-    // Populate user info for response
-    await post.populate('userId', 'name');
     
     res.json({ 
       success: true, 
@@ -75,7 +83,7 @@ router.post('/', asyncHandler(async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create post', 
-      data: null 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 }));
@@ -120,29 +128,24 @@ router.post('/:postId/comments', asyncHandler(async (req, res) => {
       });
     }
     
-    // Add comment
-    post.comments.push({ 
-      userId, 
+    // Create comment
+    const comment = await Comment.create({ 
+      post_id: postId,
+      user_id: userId, 
       content: content.trim() 
     });
-    
-    await post.save();
-    
-    // Populate user info for response
-    await post.populate('userId', 'name');
-    await post.populate('comments.userId', 'name');
     
     res.json({ 
       success: true, 
       message: 'Comment added successfully', 
-      data: post 
+      data: comment 
     });
   } catch (error) {
     console.error('Error adding comment:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to add comment', 
-      data: null 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 }));
@@ -152,9 +155,7 @@ router.get('/:postId', asyncHandler(async (req, res) => {
   try {
     const { postId } = req.params;
     
-    const post = await Post.findById(postId)
-      .populate('userId', 'name')
-      .populate('comments.userId', 'name');
+    const post = await Post.findById(postId);
     
     if (!post) {
       return res.status(404).json({ 
@@ -173,7 +174,7 @@ router.get('/:postId', asyncHandler(async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch post', 
-      data: null 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 }));
@@ -200,14 +201,14 @@ router.delete('/:postId', asyncHandler(async (req, res) => {
     }
     
     // Check if user is the author of the post
-    if (post.userId.toString() !== userId) {
+    if (post.user_id !== userId) {
       return res.status(403).json({ 
         success: false, 
         message: 'You can only delete your own posts' 
       });
     }
     
-    await Post.findByIdAndDelete(postId);
+    await Post.delete(postId);
     
     res.json({ 
       success: true, 
@@ -219,7 +220,7 @@ router.delete('/:postId', asyncHandler(async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Failed to delete post', 
-      data: null 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 }));
@@ -246,14 +247,14 @@ router.post('/:postId/delete', asyncHandler(async (req, res) => {
     }
     
     // Check if user is the author of the post
-    if (post.userId.toString() !== userId) {
+    if (post.user_id !== userId) {
       return res.status(403).json({ 
         success: false, 
         message: 'You can only delete your own posts' 
       });
     }
     
-    await Post.findByIdAndDelete(postId);
+    await Post.delete(postId);
     
     res.json({ 
       success: true, 
@@ -265,7 +266,7 @@ router.post('/:postId/delete', asyncHandler(async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Failed to delete post', 
-      data: null 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 }));
