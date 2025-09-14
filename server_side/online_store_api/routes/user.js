@@ -99,7 +99,11 @@ router.put('/:id', asyncHandler(async (req, res) => {
     try {
         const userID = req.params.id;
         const update = req.body || {};
-        const updatedUser = await User.findByIdAndUpdate(userID, update, { new: true });
+        
+        // Add updated_at timestamp
+        update.updated_at = new Date().toISOString();
+        
+        const updatedUser = await User.update(userID, update);
 
         if (!updatedUser) {
             return res.status(404).json({ success: false, message: "User not found." });
@@ -118,13 +122,26 @@ router.post('/:id/upgrade-to-seller', asyncHandler(async (req, res) => {
     if (!businessName || !phone) {
         return res.status(400).json({ success: false, message: 'businessName and phone are required' });
     }
-    const user = await User.findByIdAndUpdate(
-        userID,
-        { role: 'seller', sellerProfile: { businessName, phone, paypalEmail, verified: false } },
-        { new: true }
-    );
-    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-    res.json({ success: true, message: 'Upgraded to seller', data: user });
+    
+    try {
+        // Update user to seller with business information
+        const updateData = {
+            role: 'seller',
+            business_name: businessName,
+            phone: phone,
+            paypal_email: paypalEmail || null,
+            verified: false,
+            updated_at: new Date().toISOString()
+        };
+        
+        const user = await User.update(userID, updateData);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        
+        res.json({ success: true, message: 'Upgraded to seller', data: user });
+    } catch (error) {
+        console.error('Error upgrading user to seller:', error);
+        res.status(500).json({ success: false, message: 'Failed to upgrade user to seller' });
+    }
 }));
 
 // Delete a user
@@ -201,9 +218,21 @@ router.post('/sync-external', asyncHandler(async (req, res) => {
 // Promote a user to admin (protect this route in production)
 router.post('/:id/promote-admin', asyncHandler(async (req, res) => {
     const userID = req.params.id;
-    const user = await User.findByIdAndUpdate(userID, { role: 'admin' }, { new: true });
-    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-    res.json({ success: true, message: 'Promoted to admin', data: user });
+    
+    try {
+        const updateData = {
+            role: 'admin',
+            updated_at: new Date().toISOString()
+        };
+        
+        const user = await User.update(userID, updateData);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        
+        res.json({ success: true, message: 'Promoted to admin', data: user });
+    } catch (error) {
+        console.error('Error promoting user to admin:', error);
+        res.status(500).json({ success: false, message: 'Failed to promote user to admin' });
+    }
 }));
 
 module.exports = router;
