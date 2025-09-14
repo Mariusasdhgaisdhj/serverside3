@@ -154,29 +154,42 @@ router.post('/sync-external', asyncHandler(async (req, res) => {
     }
     
     try {
+        console.log('=== User Sync Debug ===');
+        console.log('External Auth ID:', externalAuthId);
+        console.log('Name:', name);
+        console.log('Email:', email);
+        
         // Find by external id or email
+        console.log('Looking for existing user...');
         let user = await User.findByExternalIdOrEmail(externalAuthId, email);
+        console.log('Found user:', user ? 'Yes' : 'No');
         
         if (!user) {
+            console.log('Creating new user...');
             // Create new user with validated data
             user = await User.create({ 
-                externalAuthId, 
+                external_auth_id: externalAuthId, 
                 name, 
                 email, 
                 password: 'external' 
             });
+            console.log('User created successfully');
         } else {
+            console.log('Updating existing user...');
             // Update existing user
             user = await User.update(user.id, {
-                externalAuthId, 
+                external_auth_id: externalAuthId, 
                 name, 
                 email
             });
+            console.log('User updated successfully');
         }
         
+        console.log('Sync completed successfully');
         res.json({ success: true, message: 'User synced successfully', data: user });
     } catch (error) {
         console.error('Error syncing user:', error);
+        console.error('Error details:', error.message);
         res.status(500).json({ 
             success: false, 
             message: "Failed to sync user. Please check your database connection.",

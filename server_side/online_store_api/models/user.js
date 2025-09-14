@@ -68,11 +68,24 @@ class User {
   // Find user by external auth ID or email
   static async findByExternalIdOrEmail(externalAuthId, email) {
     try {
-      const { data, error } = await supabase
+      // First try to find by external auth ID
+      let { data, error } = await supabase
         .from('users')
         .select('*')
-        .or(`external_auth_id.eq.${externalAuthId},email.eq.${email.toLowerCase().trim()}`)
+        .eq('external_auth_id', externalAuthId)
         .single();
+      
+      if (error && error.code === 'PGRST116') {
+        // If not found by external auth ID, try by email
+        const result = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', email.toLowerCase().trim())
+          .single();
+        
+        data = result.data;
+        error = result.error;
+      }
       
       if (error && error.code !== 'PGRST116') throw error;
       return data;
