@@ -13,7 +13,12 @@ router.get('/', asyncHandler(async (req, res) => {
         const categories = await Category.findAll();
         res.json({ success: true, message: "Categories retrieved successfully.", data: categories });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('Error fetching categories:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch categories. Please check your database connection.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 }));
 

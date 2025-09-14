@@ -15,9 +15,10 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // Test connection
 const testConnection = async () => {
   try {
+    // Simple connection test without querying tables
     const { data, error } = await supabase
       .from('users')
-      .select('count')
+      .select('id')
       .limit(1);
     
     if (error) {

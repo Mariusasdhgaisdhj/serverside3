@@ -15,15 +15,16 @@ app.use('/image/products', express.static('public/products'));
 app.use('/image/category', express.static('public/category'));
 app.use('/image/poster', express.static('public/posters'));
 
-// Supabase connection test
+// Supabase connection test (non-blocking)
 testConnection().then(connected => {
   if (connected) {
     console.log('Connected to Supabase successfully');
   } else {
-    console.error('Failed to connect to Supabase');
+    console.error('Failed to connect to Supabase - check environment variables');
   }
 }).catch(err => {
   console.error('Supabase connection error:', err);
+  // Don't crash the app if Supabase connection fails
 });
 
 // Routes
