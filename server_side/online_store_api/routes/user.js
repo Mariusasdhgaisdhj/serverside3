@@ -6,10 +6,15 @@ const User = require('../models/user');
 // Get all users
 router.get('/', asyncHandler(async (req, res) => {
     try {
-        const users = await User.find();
+        const users = await User.findAll();
         res.json({ success: true, message: "Users retrieved successfully.", data: users });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('Error fetching users:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch users. Please check your database connection.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 }));
 
@@ -17,8 +22,17 @@ router.get('/', asyncHandler(async (req, res) => {
 router.get('/search', asyncHandler(async (req, res) => {
     const { name } = req.query;
     if (!name) return res.status(400).json({ success: false, message: 'name query required' });
-    const users = await User.find({ name: { $regex: new RegExp(name, 'i') } }).limit(10);
-    res.json({ success: true, message: 'Users found', data: users });
+    try {
+        const users = await User.searchByName(name);
+        res.json({ success: true, message: 'Users found', data: users });
+    } catch (error) {
+        console.error('Error searching users:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to search users. Please check your database connection.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
 }));
 
 // login
@@ -27,8 +41,7 @@ router.post('/login', async (req, res) => {
 
     try {
         // Check if the user exists
-        const user = await User.findOne({ name });
-
+        const user = await User.findByEmail(name);
 
         if (!user) {
             return res.status(401).json({ success: false, message: "Invalid name or password." });
@@ -41,7 +54,12 @@ router.post('/login', async (req, res) => {
         // Authentication successful
         res.status(200).json({ success: true, message: "Login successful.",data: user });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('Error during login:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to login. Please check your database connection.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 });
 
@@ -137,7 +155,7 @@ router.post('/sync-external', asyncHandler(async (req, res) => {
     
     try {
         // Find by external id or email
-        let user = await User.findOne({ $or: [ { externalAuthId }, { email } ] });
+        let user = await User.findByExternalIdOrEmail(externalAuthId, email);
         
         if (!user) {
             // Create new user with validated data
@@ -149,22 +167,21 @@ router.post('/sync-external', asyncHandler(async (req, res) => {
             });
         } else {
             // Update existing user
-            user.externalAuthId = externalAuthId;
-            user.name = name;
-            user.email = email;
-            await user.save();
-        }
-        
-        res.json({ success: true, message: 'User synced', data: user });
-    } catch (error) {
-        if (error.code === 11000) {
-            // Handle duplicate key error
-            return res.status(400).json({ 
-                success: false, 
-                message: 'User with this email already exists. Please use a different email or contact support.' 
+            user = await User.update(user.id, {
+                externalAuthId, 
+                name, 
+                email
             });
         }
-        res.status(500).json({ success: false, message: error.message });
+        
+        res.json({ success: true, message: 'User synced successfully', data: user });
+    } catch (error) {
+        console.error('Error syncing user:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to sync user. Please check your database connection.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 }));
 

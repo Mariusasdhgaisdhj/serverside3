@@ -65,6 +65,38 @@ class User {
     }
   }
 
+  // Find user by external auth ID or email
+  static async findByExternalIdOrEmail(externalAuthId, email) {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .or(`external_auth_id.eq.${externalAuthId},email.eq.${email.toLowerCase().trim()}`)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') throw error;
+      return data;
+    } catch (error) {
+      throw new Error(`Error finding user by external ID or email: ${error.message}`);
+    }
+  }
+
+  // Search users by name (email)
+  static async searchByName(name) {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('name', `%${name}%`)
+        .limit(10);
+      
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      throw new Error(`Error searching users by name: ${error.message}`);
+    }
+  }
+
   // Update user
   static async update(id, updateData) {
     try {
