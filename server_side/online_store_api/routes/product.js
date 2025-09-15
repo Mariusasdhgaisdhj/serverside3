@@ -9,8 +9,56 @@ const { supabase } = require('../config/supabase');
 // Get all products (optionally filter by sellerId)
 router.get('/', asyncHandler(async (req, res) => {
     try {
-        const products = await Product.findAll(req.query.sellerId);
-        res.json({ success: true, message: "Products retrieved successfully.", data: products });
+        const filters = {};
+        if (req.query.sellerId) {
+            filters.sellerId = req.query.sellerId;
+        }
+        
+        const result = await Product.findAll(filters);
+        const products = result.data || [];
+        
+        // Transform the data to match frontend expectations
+        const transformedProducts = products.map(product => ({
+            _id: product.id,
+            name: product.name,
+            description: product.description,
+            quantity: product.quantity,
+            price: product.price,
+            offerPrice: product.offer_price,
+            sellerId: product.users ? {
+                _id: product.users.id || product.seller_id,
+                name: product.users.name,
+                email: product.users.email,
+                businessName: product.users.business_name,
+                verified: product.users.verified || false
+            } : null,
+            proCategoryId: product.categories ? {
+                _id: product.categories.id || product.pro_category_id,
+                name: product.categories.name
+            } : null,
+            proSubCategoryId: product.subcategories ? {
+                _id: product.subcategories.id || product.pro_sub_category_id,
+                name: product.subcategories.name
+            } : null,
+            proBrandId: product.brands ? {
+                _id: product.brands.id || product.pro_brand_id,
+                name: product.brands.name
+            } : null,
+            proVariantTypeId: product.variant_types ? {
+                _id: product.variant_types.id || product.pro_variant_type_id,
+                type: product.variant_types.type
+            } : null,
+            proVariantId: product.pro_variant_id || [],
+            images: product.product_images ? product.product_images.map(img => ({
+                _id: img.id,
+                image: img.image_order,
+                url: img.url
+            })) : [],
+            createdAt: product.created_at,
+            updatedAt: product.updated_at
+        }));
+        
+        res.json({ success: true, message: "Products retrieved successfully.", data: transformedProducts });
     } catch (error) {
         console.error('Error fetching products:', error);
         res.status(500).json({ 
@@ -29,7 +77,49 @@ router.get('/:id', asyncHandler(async (req, res) => {
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found." });
         }
-        res.json({ success: true, message: "Product retrieved successfully.", data: product });
+        
+        // Transform the data to match frontend expectations
+        const transformedProduct = {
+            _id: product.id,
+            name: product.name,
+            description: product.description,
+            quantity: product.quantity,
+            price: product.price,
+            offerPrice: product.offer_price,
+            sellerId: product.users ? {
+                _id: product.users.id || product.seller_id,
+                name: product.users.name,
+                email: product.users.email,
+                businessName: product.users.business_name,
+                verified: product.users.verified || false
+            } : null,
+            proCategoryId: product.categories ? {
+                _id: product.categories.id || product.pro_category_id,
+                name: product.categories.name
+            } : null,
+            proSubCategoryId: product.subcategories ? {
+                _id: product.subcategories.id || product.pro_sub_category_id,
+                name: product.subcategories.name
+            } : null,
+            proBrandId: product.brands ? {
+                _id: product.brands.id || product.pro_brand_id,
+                name: product.brands.name
+            } : null,
+            proVariantTypeId: product.variant_types ? {
+                _id: product.variant_types.id || product.pro_variant_type_id,
+                type: product.variant_types.type
+            } : null,
+            proVariantId: product.pro_variant_id || [],
+            images: product.product_images ? product.product_images.map(img => ({
+                _id: img.id,
+                image: img.image_order,
+                url: img.url
+            })) : [],
+            createdAt: product.created_at,
+            updatedAt: product.updated_at
+        };
+        
+        res.json({ success: true, message: "Product retrieved successfully.", data: transformedProduct });
     } catch (error) {
         console.error('Error fetching product:', error);
         res.status(500).json({ 
