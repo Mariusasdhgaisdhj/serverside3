@@ -14,6 +14,87 @@ router.get('/health', (req, res) => {
     });
 });
 
+// Seed subcategories endpoint (for development)
+router.post('/seed', asyncHandler(async (req, res) => {
+    try {
+        const { supabase } = require('../config/supabase');
+        
+        // Get all categories
+        const { data: categories, error: catError } = await supabase
+            .from('categories')
+            .select('id, name')
+            .order('name');
+        
+        if (catError) {
+            return res.status(500).json({ 
+                success: false, 
+                message: "Failed to fetch categories",
+                error: catError.message 
+            });
+        }
+        
+        if (categories.length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "No categories found. Please add categories first." 
+            });
+        }
+        
+        // Add sample subcategories for each category
+        const subcategoriesToAdd = [];
+        
+        categories.forEach(category => {
+            let subcategoryNames = [];
+            
+            if (category.name.toLowerCase().includes('grain') || category.name.toLowerCase().includes('cereal')) {
+                subcategoryNames = ['Rice', 'Wheat', 'Corn', 'Barley', 'Oats', 'Quinoa'];
+            } else if (category.name.toLowerCase().includes('vegetable')) {
+                subcategoryNames = ['Leafy Greens', 'Root Vegetables', 'Tomatoes', 'Peppers', 'Cucumbers'];
+            } else if (category.name.toLowerCase().includes('fruit')) {
+                subcategoryNames = ['Citrus Fruits', 'Tropical Fruits', 'Berries', 'Stone Fruits', 'Apples'];
+            } else if (category.name.toLowerCase().includes('dairy')) {
+                subcategoryNames = ['Milk', 'Cheese', 'Yogurt', 'Butter', 'Cream'];
+            } else {
+                subcategoryNames = ['Type A', 'Type B', 'Type C', 'Type D', 'Type E'];
+            }
+            
+            subcategoryNames.forEach(name => {
+                subcategoriesToAdd.push({
+                    name,
+                    category_id: category.id
+                });
+            });
+        });
+        
+        // Insert subcategories
+        const { data: inserted, error: insertError } = await supabase
+            .from('subcategories')
+            .insert(subcategoriesToAdd)
+            .select();
+        
+        if (insertError) {
+            return res.status(500).json({ 
+                success: false, 
+                message: "Failed to insert subcategories",
+                error: insertError.message 
+            });
+        }
+        
+        res.json({ 
+            success: true, 
+            message: `Successfully added ${inserted.length} subcategories`,
+            data: inserted 
+        });
+        
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to seed subcategories",
+            error: error.message 
+        });
+    }
+}));
+
 // Get all sub-categories
 router.get('/', asyncHandler(async (req, res) => {
     try {
