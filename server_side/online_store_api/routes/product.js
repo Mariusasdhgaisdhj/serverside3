@@ -132,14 +132,36 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
 
 
-// create new product
-router.post('/', uploadProduct.fields([
+// Dynamically choose upload strategy: memory (Vercel) vs disk (local)
+const isServerless = !!process.env.VERCEL || process.env.NODE_ENV === 'production';
+const memoryUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 1024 * 1024 * 5 }
+}).fields([
     { name: 'image1', maxCount: 1 },
     { name: 'image2', maxCount: 1 },
     { name: 'image3', maxCount: 1 },
     { name: 'image4', maxCount: 1 },
     { name: 'image5', maxCount: 1 }
-]), asyncHandler(async (req, res) => {
+]);
+
+// create new product
+router.post('/', (req, res, next) => {
+    const handler = isServerless ? memoryUpload : uploadProduct.fields([
+        { name: 'image1', maxCount: 1 },
+        { name: 'image2', maxCount: 1 },
+        { name: 'image3', maxCount: 1 },
+        { name: 'image4', maxCount: 1 },
+        { name: 'image5', maxCount: 1 }
+    ]);
+    handler(req, res, (err) => {
+        if (err) {
+            console.error('Upload error:', err);
+            return res.status(500).json({ success: false, message: err.message });
+        }
+        next();
+    });
+}, asyncHandler(async (req, res) => {
     try {
         console.log('=== Product creation request received ===');
         console.log('Request body:', req.body);
@@ -159,34 +181,16 @@ router.post('/', uploadProduct.fields([
             return res.status(400).json({ success: false, message: "Required fields are missing." });
         }
 
-        // Process uploaded images
-        const imageUrls = [];
+        // Gather uploaded files by field for later processing
         const fields = ['image1', 'image2', 'image3', 'image4', 'image5'];
-        
-        fields.forEach((field, index) => {
-            if (req.files && req.files[field] && req.files[field].length > 0) {
-                const file = req.files[field][0];
-                try {
-                    // Create URL for the uploaded file
-                    const imageUrl = `${req.protocol}://${req.get('host')}/image/products/${file.filename}`;
-                    imageUrls.push({ image: index + 1, url: imageUrl });
-                    console.log(`Added image ${index + 1}: ${imageUrl}`);
-                } catch (imageError) {
-                    console.error(`Error processing image ${index + 1}:`, imageError);
-                    // Continue with other images even if one fails
+        const uploadedFiles = [];
+        if (req.files) {
+            fields.forEach((field, idx) => {
+                if (req.files[field] && req.files[field].length > 0) {
+                    const file = req.files[field][0];
+                    uploadedFiles.push({ order: idx + 1, file });
                 }
-            }
-        });
-
-        console.log('Image URLs:', imageUrls);
-
-        // Add a default image if no images were uploaded
-        if (imageUrls.length === 0) {
-            imageUrls.push({ 
-                image: 1, 
-                url: `${req.protocol}://${req.get('host')}/image/products/default-product.jpg` 
             });
-            console.log('Added default image for product without images');
         }
 
             // Convert data types to ensure they match the schema
@@ -210,21 +214,68 @@ router.post('/', uploadProduct.fields([
             const savedProduct = await Product.create(productData);
             console.log('Product saved successfully:', savedProduct.id);
 
-            // Insert images into product_images table
-            if (imageUrls.length > 0) {
-                const imageData = imageUrls.map(img => ({
-                    product_id: savedProduct.id,
-                    image_order: img.image,
-                    url: img.url
-                }));
+            // Resolve image URLs depending on environment
+            let imageRows = [];
+            if (uploadedFiles.length > 0) {
+                if (isServerless) {
+                    // Upload buffers to Supabase Storage
+                    console.log('Uploading images to Supabase Storage...');
+                    for (const item of uploadedFiles) {
+                        const file = item.file;
+                        const fileNameSafe = `${Date.now()}_${Math.floor(Math.random()*1000)}_${file.originalname}`.replace(/\s+/g, '_');
+                        const storagePath = `products/${savedProduct.id}/${fileNameSafe}`;
+                        const { error: uploadError } = await supabase.storage
+                            .from('product-images')
+                            .upload(storagePath, file.buffer, {
+                                contentType: file.mimetype,
+                                upsert: false,
+                            });
+                        if (uploadError) {
+                            console.error('Supabase upload error:', uploadError);
+                            continue;
+                        }
+                        const { data: publicData } = supabase.storage
+                            .from('product-images')
+                            .getPublicUrl(storagePath);
+                        const publicUrl = publicData?.publicUrl;
+                        if (publicUrl) {
+                            imageRows.push({
+                                product_id: savedProduct.id,
+                                image_order: item.order,
+                                url: publicUrl,
+                            });
+                            console.log(`Image uploaded: ${publicUrl}`);
+                        }
+                    }
+                } else {
+                    // Local dev: files saved to disk by uploadProduct
+                    uploadedFiles.forEach((item) => {
+                        const file = item.file;
+                        const imageUrl = `${req.protocol}://${req.get('host')}/image/products/${file.filename}`;
+                        imageRows.push({
+                            product_id: savedProduct.id,
+                            image_order: item.order,
+                            url: imageUrl,
+                        });
+                    });
+                }
+            }
 
+            // Fallback default image if none
+            if (imageRows.length === 0) {
+                const fallbackUrl = isServerless
+                    ? 'https://picsum.photos/400/400?random=999'
+                    : `${req.protocol}://${req.get('host')}/image/products/default-product.jpg`;
+                imageRows.push({ product_id: savedProduct.id, image_order: 1, url: fallbackUrl });
+            }
+
+            // Insert image rows
+            if (imageRows.length > 0) {
                 const { error: imageError } = await supabase
                     .from('product_images')
-                    .insert(imageData);
-
+                    .insert(imageRows);
                 if (imageError) {
                     console.error('Error inserting product images:', imageError);
-                    // Don't fail the entire request if images fail
                 } else {
                     console.log('Product images saved successfully');
                 }
