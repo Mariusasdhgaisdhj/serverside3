@@ -153,6 +153,29 @@ router.post('/', asyncHandler(async (req, res) => {
             await Order.addBillingAddress(order.id, billingAddress);
         }
         
+        // Auto-create conversation(s) between buyer and seller(s)
+        try {
+            const { supabase } = require('../config/supabase');
+            const productIds = Array.isArray(items) ? items.map((it) => it.productID).filter(Boolean) : [];
+            if (productIds.length > 0) {
+                const { data: proRows, error: proErr } = await supabase
+                    .from('products')
+                    .select('id, seller_id')
+                    .in('id', productIds);
+                if (!proErr && Array.isArray(proRows)) {
+                    const uniqueSellerIds = [...new Set(proRows.map((p) => p.seller_id).filter(Boolean))];
+                    if (uniqueSellerIds.length > 0) {
+                        const { Conversation } = require('../models/message');
+                        for (const sellerId of uniqueSellerIds) {
+                            await Conversation.getOrCreate(userID, sellerId);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('Order conversation creation failed:', e?.message || e);
+        }
+        
         res.json({ 
             success: true, 
             message: "Order created successfully.", 
