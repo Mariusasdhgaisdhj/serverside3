@@ -133,81 +133,56 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
 
 // create new product
-router.post('/', asyncHandler(async (req, res) => {
+router.post('/', uploadProduct.fields([
+    { name: 'image1', maxCount: 1 },
+    { name: 'image2', maxCount: 1 },
+    { name: 'image3', maxCount: 1 },
+    { name: 'image4', maxCount: 1 },
+    { name: 'image5', maxCount: 1 }
+]), asyncHandler(async (req, res) => {
     try {
         console.log('=== Product creation request received ===');
         console.log('Request body:', req.body);
         console.log('Request files:', req.files);
 
-        // Create a memory storage for Vercel deployment
-        const memoryStorage = multer.memoryStorage();
-        const uploadToMemory = multer({ 
-            storage: memoryStorage,
-            limits: {
-                fileSize: 1024 * 1024 * 5 // limit filesize to 5MB
+        // Extract product data from the request body
+        const { sellerId, name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId } = req.body;
+
+        console.log('Extracted data:', {
+            sellerId, name, description, quantity, price, 
+            proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId
+        });
+
+        // Check if any required fields are missing
+        if (!name || !quantity || !price || !proCategoryId || !proSubCategoryId) {
+            console.log('Missing required fields');
+            return res.status(400).json({ success: false, message: "Required fields are missing." });
+        }
+
+        // Process uploaded images
+        const imageUrls = [];
+        const fields = ['image1', 'image2', 'image3', 'image4', 'image5'];
+        
+        fields.forEach((field, index) => {
+            if (req.files && req.files[field] && req.files[field].length > 0) {
+                const file = req.files[field][0];
+                // Create URL for the uploaded file
+                const imageUrl = `${req.protocol}://${req.get('host')}/image/products/${file.filename}`;
+                imageUrls.push({ image: index + 1, url: imageUrl });
+                console.log(`Added image ${index + 1}: ${imageUrl}`);
             }
         });
 
-        // Execute the Multer middleware to handle multiple file fields
-        uploadToMemory.fields([
-            { name: 'image1', maxCount: 1 },
-            { name: 'image2', maxCount: 1 },
-            { name: 'image3', maxCount: 1 },
-            { name: 'image4', maxCount: 1 },
-            { name: 'image5', maxCount: 1 }
-        ])(req, res, async function (err) {
-            if (err instanceof multer.MulterError) {
-                // Handle Multer errors, if any
-                if (err.code === 'LIMIT_FILE_SIZE') {
-                    err.message = 'File size is too large. Maximum filesize is 5MB per image.';
-                }
-                console.log(`Add product: ${err}`);
-                return res.json({ success: false, message: err.message });
-            } else if (err) {
-                // Handle other errors, if any
-                console.log(`Add product: ${err}`);
-                return res.json({ success: false, message: err });
-            }
+        console.log('Image URLs:', imageUrls);
 
-            // Extract product data from the request body
-            const { sellerId, name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId } = req.body;
-
-            console.log('Extracted data:', {
-                sellerId, name, description, quantity, price, 
-                proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId
+        // Add a default image if no images were uploaded
+        if (imageUrls.length === 0) {
+            imageUrls.push({ 
+                image: 1, 
+                url: `${req.protocol}://${req.get('host')}/image/products/default-product.jpg` 
             });
-
-            // Check if any required fields are missing
-            if (!name || !quantity || !price || !proCategoryId || !proSubCategoryId) {
-                console.log('Missing required fields');
-                return res.status(400).json({ success: false, message: "Required fields are missing." });
-            }
-
-            // Initialize an array to store image URLs
-            const imageUrls = [];
-
-            // Iterate over the file fields
-            const fields = ['image1', 'image2', 'image3', 'image4', 'image5'];
-            fields.forEach((field, index) => {
-                if (req.files && req.files[field] && req.files[field].length > 0) {
-                    const file = req.files[field][0];
-                    // Use a more reliable placeholder URL
-                    const imageUrl = `https://picsum.photos/400/400?random=${index + 1}`;
-                    imageUrls.push({ image: index + 1, url: imageUrl });
-                    console.log(`Added image ${index + 1}: ${imageUrl}`);
-                }
-            });
-
-            console.log('Image URLs:', imageUrls);
-
-            // Add a default image if no images were uploaded
-            if (imageUrls.length === 0) {
-                imageUrls.push({ 
-                    image: 1, 
-                    url: 'https://picsum.photos/400/400?random=999' 
-                });
-                console.log('Added default image for product without images');
-            }
+            console.log('Added default image for product without images');
+        }
 
             // Convert data types to ensure they match the schema
             const productData = {
@@ -250,9 +225,8 @@ router.post('/', asyncHandler(async (req, res) => {
                 }
             }
 
-            // Send a success response back to the client
-            res.json({ success: true, message: "Product created successfully.", data: savedProduct });
-        });
+        // Send a success response back to the client
+        res.json({ success: true, message: "Product created successfully.", data: savedProduct });
     } catch (error) {
         // Handle any errors that occur during the process
         console.error("Error creating product:", error);
