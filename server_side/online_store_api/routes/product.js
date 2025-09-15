@@ -4,6 +4,7 @@ const Product = require('../models/product');
 const multer = require('multer');
 const { uploadProduct } = require('../uploadFile');
 const asyncHandler = require('express-async-handler');
+const { supabase } = require('../config/supabase');
 
 // Get all products (optionally filter by sellerId)
 router.get('/', asyncHandler(async (req, res) => {
@@ -120,18 +121,17 @@ router.post('/', asyncHandler(async (req, res) => {
 
             // Convert data types to ensure they match the schema
             const productData = {
-                sellerId: sellerId,
+                seller_id: sellerId,
                 name: String(name).trim(),
                 description: description ? String(description).trim() : '',
                 quantity: parseInt(quantity) || 0,
                 price: parseFloat(price) || 0,
-                offerPrice: offerPrice ? parseFloat(offerPrice) : undefined,
-                proCategoryId: proCategoryId,
-                proSubCategoryId: proSubCategoryId,
-                proBrandId: proBrandId || undefined,
-                proVariantTypeId: proVariantTypeId || undefined,
-                proVariantId: proVariantId || undefined,
-                images: imageUrls
+                offer_price: offerPrice ? parseFloat(offerPrice) : undefined,
+                pro_category_id: proCategoryId,
+                pro_sub_category_id: proSubCategoryId,
+                pro_brand_id: proBrandId || undefined,
+                pro_variant_type_id: proVariantTypeId || undefined,
+                pro_variant_id: proVariantId || undefined
             };
 
             console.log('Processed product data:', productData);
@@ -139,6 +139,26 @@ router.post('/', asyncHandler(async (req, res) => {
             // Create a new product in the database
             const savedProduct = await Product.create(productData);
             console.log('Product saved successfully:', savedProduct.id);
+
+            // Insert images into product_images table
+            if (imageUrls.length > 0) {
+                const imageData = imageUrls.map(img => ({
+                    product_id: savedProduct.id,
+                    image_order: img.image,
+                    url: img.url
+                }));
+
+                const { error: imageError } = await supabase
+                    .from('product_images')
+                    .insert(imageData);
+
+                if (imageError) {
+                    console.error('Error inserting product images:', imageError);
+                    // Don't fail the entire request if images fail
+                } else {
+                    console.log('Product images saved successfully');
+                }
+            }
 
             // Send a success response back to the client
             res.json({ success: true, message: "Product created successfully.", data: savedProduct });
