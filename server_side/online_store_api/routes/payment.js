@@ -8,6 +8,9 @@ dotenv.config();
 const paypal = require('@paypal/checkout-server-sdk');
 const axios = require('axios');
 
+// PayMongo Service
+const PayMongoService = require('../services/paymongo');
+
 function buildPayPalClient() {
   const environment = (process.env.PAYPAL_ENVIRONMENT || 'sandbox').toLowerCase();
   const clientId = process.env.PAYPAL_CLIENT_ID;
@@ -124,5 +127,258 @@ router.post('/paypal/capture-order/:orderId', asyncHandler(async (req, res) => {
 
 
 
+
+// PayMongo GCash Payment Routes
+
+// Create PayMongo payment intent
+router.post('/paymongo/create-intent', asyncHandler(async (req, res) => {
+  try {
+    const { amount, currency = 'PHP', metadata = {} } = req.body;
+    
+    if (!amount) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Amount is required' 
+      });
+    }
+
+    const paymongo = new PayMongoService();
+    const result = await paymongo.createPaymentIntent(amount, currency, metadata);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'Payment intent created successfully',
+        data: result.data
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Failed to create payment intent',
+        error: result.error
+      });
+    }
+  } catch (error) {
+    console.error('PayMongo create intent error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+}));
+
+// Create PayMongo source for GCash
+router.post('/paymongo/create-source', asyncHandler(async (req, res) => {
+  try {
+    const { amount, currency = 'PHP', metadata = {} } = req.body;
+    
+    if (!amount) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Amount is required' 
+      });
+    }
+
+    const paymongo = new PayMongoService();
+    const result = await paymongo.createSource(amount, currency, metadata);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'GCash source created successfully',
+        data: result.data
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Failed to create GCash source',
+        error: result.error
+      });
+    }
+  } catch (error) {
+    console.error('PayMongo create source error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+}));
+
+// Create payment method for GCash
+router.post('/paymongo/create-payment-method', asyncHandler(async (req, res) => {
+  try {
+    const { phone, email } = req.body;
+    
+    if (!phone || !email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Phone and email are required' 
+      });
+    }
+
+    const paymongo = new PayMongoService();
+    const result = await paymongo.createPaymentMethod({ phone, email });
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'Payment method created successfully',
+        data: result.data
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Failed to create payment method',
+        error: result.error
+      });
+    }
+  } catch (error) {
+    console.error('PayMongo create payment method error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+}));
+
+// Attach payment method to payment intent
+router.post('/paymongo/attach-payment', asyncHandler(async (req, res) => {
+  try {
+    const { paymentIntentId, paymentMethodId } = req.body;
+    
+    if (!paymentIntentId || !paymentMethodId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Payment intent ID and payment method ID are required' 
+      });
+    }
+
+    const paymongo = new PayMongoService();
+    const result = await paymongo.attachPaymentMethod(paymentIntentId, paymentMethodId);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'Payment method attached successfully',
+        data: result.data
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Failed to attach payment method',
+        error: result.error
+      });
+    }
+  } catch (error) {
+    console.error('PayMongo attach payment error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+}));
+
+// Get payment intent status
+router.get('/paymongo/payment-intent/:id', asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!id) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Payment intent ID is required' 
+      });
+    }
+
+    const paymongo = new PayMongoService();
+    const result = await paymongo.getPaymentIntent(id);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'Payment intent retrieved successfully',
+        data: result.data
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Failed to retrieve payment intent',
+        error: result.error
+      });
+    }
+  } catch (error) {
+    console.error('PayMongo get payment intent error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+}));
+
+// PayMongo webhook handler
+router.post('/paymongo/webhook', asyncHandler(async (req, res) => {
+  try {
+    const signature = req.headers['paymongo-signature'];
+    const payload = JSON.stringify(req.body);
+    
+    if (!signature) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Missing signature' 
+      });
+    }
+
+    const paymongo = new PayMongoService();
+    const webhookSecret = process.env.PAYMONGO_WEBHOOK_SECRET;
+    
+    if (!webhookSecret) {
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Webhook secret not configured' 
+      });
+    }
+
+    const isValid = paymongo.verifyWebhookSignature(payload, signature, webhookSecret);
+    
+    if (!isValid) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid signature' 
+      });
+    }
+
+    // Handle webhook events
+    const event = req.body;
+    console.log('PayMongo webhook received:', event.type);
+    
+    // Process different event types
+    switch (event.type) {
+      case 'payment_intent.succeeded':
+        console.log('Payment succeeded:', event.data.id);
+        // Update order status in database
+        break;
+      case 'payment_intent.payment_failed':
+        console.log('Payment failed:', event.data.id);
+        // Handle failed payment
+        break;
+      default:
+        console.log('Unhandled event type:', event.type);
+    }
+
+    res.json({ success: true, message: 'Webhook processed' });
+  } catch (error) {
+    console.error('PayMongo webhook error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Webhook processing failed',
+      error: error.message
+    });
+  }
+}));
 
 module.exports = router;
