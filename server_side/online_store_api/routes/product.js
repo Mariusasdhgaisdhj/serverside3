@@ -166,8 +166,9 @@ router.post('/', (req, res, next) => {
 }, asyncHandler(async (req, res) => {
     try {
         console.log('=== Product creation request received ===');
-        console.log('Request body:', req.body);
-        console.log('Request files:', req.files);
+        console.log('Request headers content-type:', req.headers['content-type']);
+        console.log('Request body keys:', Object.keys(req.body || {}));
+        console.log('Request files:', Array.isArray(req.files) ? req.files.map(f => ({ fieldname: f.fieldname, originalname: f.originalname, size: f.size })) : req.files);
 
         // Extract product data from the request body
         const { sellerId, name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId } = req.body;
@@ -201,6 +202,7 @@ router.post('/', (req, res, next) => {
                 });
             }
         }
+        console.log('Uploaded files detected:', uploadedFiles.map(u => ({ order: u.order, name: u.file?.originalname, size: u.file?.size })));
 
             // Convert data types to ensure they match the schema
             const productData = {
@@ -275,10 +277,9 @@ router.post('/', (req, res, next) => {
 
             // Fallback default image if none
             if (imageRows.length === 0) {
-                // Use a fixed repo-served poster image instead of random placeholder
-                const fallbackUrl = `${req.protocol}://${req.get('host')}/image/poster/shopping.png`;
-                imageRows.push({ product_id: savedProduct.id, image_order: 1, url: fallbackUrl });
-                console.warn('No uploaded images detected; using fallback poster image');
+                // No file reached the server; return 400 to surface the issue instead of silently falling back
+                console.warn('No uploaded images detected; rejecting request to avoid silent fallback');
+                return res.status(400).json({ success: false, message: 'No image file received by server. Ensure field name image1 and file < 4MB.', data: null });
             }
 
             // Insert image rows

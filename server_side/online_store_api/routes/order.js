@@ -3,40 +3,21 @@ const asyncHandler = require('express-async-handler');
 const router = express.Router();
 const Order = require('../models/order');
 
-// Get all orders
+// Get all orders (Supabase)
 router.get('/', asyncHandler(async (req, res) => {
     try {
-        const { sellerId } = req.query;
-        
-        if (sellerId) {
-            // Get orders for a specific seller
-            const orders = await Order.find()
-                .populate('couponCode', 'id couponCode discountType discountAmount')
-                .populate('userID', 'id name')
-                .populate({
-                    path: 'items.productID',
-                    populate: { path: 'sellerId' }
-                })
-                .sort({ _id: -1 });
-            
-            // Filter orders that contain products from this seller
-            const sellerOrders = orders.filter(order => 
-                order.items.some(item => 
-                    item.productID && 
-                    item.productID.sellerId && 
-                    item.productID.sellerId._id.toString() === sellerId
-                )
-            );
-            
-            res.json({ success: true, message: "Seller orders retrieved successfully.", data: sellerOrders });
-        } else {
-            // Get all orders (existing logic)
-            const orders = await Order.find()
-                .populate('couponCode', 'id couponCode discountType discountAmount')
-                .populate('userID', 'id name')
-                .sort({ _id: -1 });
-            res.json({ success: true, message: "Orders retrieved successfully.", data: orders });
-        }
+        const { page = 1, limit = 50, status, paymentMethod, dateFrom, dateTo } = req.query;
+
+        const filters = {
+            status: status || undefined,
+            paymentMethod: paymentMethod || undefined,
+            startDate: dateFrom || undefined,
+            endDate: dateTo || undefined,
+        };
+
+        const { data, total } = await Order.findAll(filters, Number(page), Number(limit));
+
+        res.json({ success: true, message: "Orders retrieved successfully.", data });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -46,24 +27,20 @@ router.get('/', asyncHandler(async (req, res) => {
 router.get('/orderByUserId/:userId', asyncHandler(async (req, res) => {
     try {
         const userId = req.params.userId;
-        const orders = await Order.find({ userID: userId })
-            .populate('couponCode', 'id couponCode discountType discountAmount')
-            .populate('userID', 'id name')
-            .sort({ _id: -1 });
-        res.json({ success: true, message: "Orders retrieved successfully.", data: orders });
+        const { page = 1, limit = 50 } = req.query;
+        const { data } = await Order.findByUserId(userId, Number(page), Number(limit));
+        res.json({ success: true, message: "Orders retrieved successfully.", data });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 }));
 
 
-// Get an order by ID
+// Get an order by ID (Supabase)
 router.get('/:id', asyncHandler(async (req, res) => {
     try {
         const orderID = req.params.id;
-        const order = await Order.findById(orderID)
-        .populate('couponCode', 'id couponCode discountType discountAmount')
-        .populate('userID', 'id name');
+        const order = await Order.findById(orderID);
         if (!order) {
             return res.status(404).json({ success: false, message: "Order not found." });
         }
@@ -130,37 +107,36 @@ router.post('/', asyncHandler(async (req, res) => {
     }
 }));
 
-// Update an order
+// Update an order (Supabase)
 router.put('/:id', asyncHandler(async (req, res) => {
     try {
         const orderID = req.params.id;
         const { orderStatus, trackingUrl } = req.body;
-        if (!orderStatus) {
-            return res.status(400).json({ success: false, message: "Order Status required." });
+        if (!orderStatus && !trackingUrl) {
+            return res.status(400).json({ success: false, message: "Nothing to update." });
         }
 
-        const updatedOrder = await Order.findByIdAndUpdate(
-            orderID,
-            { orderStatus, trackingUrl },
-            { new: true }
-        );
+        const updateData = {};
+        if (orderStatus) updateData.order_status = orderStatus;
+        if (trackingUrl) updateData.tracking_url = trackingUrl;
 
+        const updatedOrder = await Order.update(orderID, updateData);
         if (!updatedOrder) {
             return res.status(404).json({ success: false, message: "Order not found." });
         }
 
-        res.json({ success: true, message: "Order updated successfully.", data: null });
+        res.json({ success: true, message: "Order updated successfully.", data: updatedOrder });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 }));
 
-// Delete an order
+// Delete an order (Supabase)
 router.delete('/:id', asyncHandler(async (req, res) => {
     try {
         const orderID = req.params.id;
-        const deletedOrder = await Order.findByIdAndDelete(orderID);
-        if (!deletedOrder) {
+        const ok = await Order.delete(orderID);
+        if (!ok) {
             return res.status(404).json({ success: false, message: "Order not found." });
         }
         res.json({ success: true, message: "Order deleted successfully." });
@@ -169,7 +145,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
     }
 }));
 
-// Update order status
+// Update order status (Supabase)
 router.post('/:id/status', asyncHandler(async (req, res) => {
     try {
         const orderID = req.params.id;
@@ -179,12 +155,7 @@ router.post('/:id/status', asyncHandler(async (req, res) => {
             return res.status(400).json({ success: false, message: "Order Status is required." });
         }
 
-        const updatedOrder = await Order.findByIdAndUpdate(
-            orderID,
-            { orderStatus },
-            { new: true }
-        );
-
+        const updatedOrder = await Order.updateStatus(orderID, orderStatus);
         if (!updatedOrder) {
             return res.status(404).json({ success: false, message: "Order not found." });
         }
