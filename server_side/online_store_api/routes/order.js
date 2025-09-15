@@ -74,6 +74,7 @@ router.post('/', asyncHandler(async (req, res) => {
 
     try {
         // Create the order
+        // Map nested totals to flat columns
         const orderData = {
             user_id: userID,
             order_status: orderStatus || 'pending',
@@ -81,7 +82,9 @@ router.post('/', asyncHandler(async (req, res) => {
             payment_method: paymentMethod,
             coupon_id: couponCode,
             tracking_url: trackingUrl,
-            order_total: orderTotal
+            subtotal: orderTotal?.subtotal,
+            discount: orderTotal?.discount,
+            total: orderTotal?.total
         };
 
         const order = await Order.create(orderData);

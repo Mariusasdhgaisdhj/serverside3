@@ -17,6 +17,58 @@ class Order {
     }
   }
 
+  // Add order items
+  static async addItems(orderId, items = []) {
+    if (!items || items.length === 0) return true;
+    const rows = items.map((it) => ({
+      order_id: orderId,
+      product_id: it.productID,
+      product_name: it.productName,
+      quantity: it.quantity,
+      price: it.price,
+      variant: it.variant,
+    }));
+    const { error } = await supabase.from('order_items').insert(rows);
+    if (error) throw new Error(error.message);
+    return true;
+  }
+
+  // Add shipping address
+  static async addShippingAddress(orderId, addr) {
+    if (!addr) return true;
+    const row = {
+      order_id: orderId,
+      phone: addr.phone,
+      street: addr.street,
+      city: addr.city,
+      state: addr.state,
+      postal_code: addr.postalCode,
+      country: addr.country,
+    };
+    const { error } = await supabase.from('shipping_addresses').insert([row]);
+    if (error) throw new Error(error.message);
+    return true;
+  }
+
+  // Add billing address
+  static async addBillingAddress(orderId, addr) {
+    if (!addr) return true;
+    const row = {
+      order_id: orderId,
+      phone: addr.phone,
+      street: addr.street,
+      city: addr.city,
+      state: addr.state,
+      postal_code: addr.postalCode,
+      country: addr.country,
+      company_name: addr.companyName || null,
+      tax_id: addr.taxId || null,
+    };
+    const { error } = await supabase.from('billing_addresses').insert([row]);
+    if (error) throw new Error(error.message);
+    return true;
+  }
+
   // Find order by ID
   static async findById(id) {
     try {
