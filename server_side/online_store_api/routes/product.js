@@ -243,9 +243,12 @@ router.post('/', (req, res, next) => {
                             console.error('Supabase upload error:', uploadError);
                             continue;
                         }
-                        const { data: publicData } = supabase.storage
+                        const { data: publicData, error: pubErr } = supabase.storage
                             .from('product-images')
                             .getPublicUrl(storagePath);
+                        if (pubErr) {
+                            console.error('Supabase getPublicUrl error:', pubErr);
+                        }
                         const publicUrl = publicData?.publicUrl;
                         if (publicUrl) {
                             imageRows.push({
