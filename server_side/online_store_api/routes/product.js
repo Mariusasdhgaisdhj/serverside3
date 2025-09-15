@@ -133,26 +133,17 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
 
 // create new product
-router.post('/', (req, res, next) => {
-    uploadProduct.fields([
-        { name: 'image1', maxCount: 1 },
-        { name: 'image2', maxCount: 1 },
-        { name: 'image3', maxCount: 1 },
-        { name: 'image4', maxCount: 1 },
-        { name: 'image5', maxCount: 1 }
-    ])(req, res, (err) => {
-        if (err) {
-            console.error('Multer error:', err);
-            return res.status(500).json({ success: false, message: err.message });
-        }
-        next();
-    });
-}, asyncHandler(async (req, res) => {
+router.post('/', uploadProduct.fields([
+    { name: 'image1', maxCount: 1 },
+    { name: 'image2', maxCount: 1 },
+    { name: 'image3', maxCount: 1 },
+    { name: 'image4', maxCount: 1 },
+    { name: 'image5', maxCount: 1 }
+]), asyncHandler(async (req, res) => {
     try {
         console.log('=== Product creation request received ===');
         console.log('Request body:', req.body);
         console.log('Request files:', req.files);
-        console.log('Multer processing completed, starting product creation...');
 
         // Extract product data from the request body
         const { sellerId, name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId } = req.body;
@@ -213,40 +204,34 @@ router.post('/', (req, res, next) => {
                 pro_variant_id: proVariantId || undefined
             };
 
-        console.log('Processed product data:', productData);
-        console.log('About to create product in database...');
+            console.log('Processed product data:', productData);
 
-        // Create a new product in the database
-        const savedProduct = await Product.create(productData);
-        console.log('Product saved successfully:', savedProduct.id);
+            // Create a new product in the database
+            const savedProduct = await Product.create(productData);
+            console.log('Product saved successfully:', savedProduct.id);
 
-        // Insert images into product_images table
-        if (imageUrls.length > 0) {
-            console.log('About to insert images into database...');
-            const imageData = imageUrls.map(img => ({
-                product_id: savedProduct.id,
-                image_order: img.image,
-                url: img.url
-            }));
+            // Insert images into product_images table
+            if (imageUrls.length > 0) {
+                const imageData = imageUrls.map(img => ({
+                    product_id: savedProduct.id,
+                    image_order: img.image,
+                    url: img.url
+                }));
 
-            const { error: imageError } = await supabase
-                .from('product_images')
-                .insert(imageData);
+                const { error: imageError } = await supabase
+                    .from('product_images')
+                    .insert(imageData);
 
-            if (imageError) {
-                console.error('Error inserting product images:', imageError);
-                // Don't fail the entire request if images fail
-            } else {
-                console.log('Product images saved successfully');
+                if (imageError) {
+                    console.error('Error inserting product images:', imageError);
+                    // Don't fail the entire request if images fail
+                } else {
+                    console.log('Product images saved successfully');
+                }
             }
-        } else {
-            console.log('No images to insert');
-        }
 
         // Send a success response back to the client
-        console.log('About to send success response...');
         res.json({ success: true, message: "Product created successfully.", data: savedProduct });
-        console.log('Success response sent');
     } catch (error) {
         // Handle any errors that occur during the process
         console.error("Error creating product:", error);

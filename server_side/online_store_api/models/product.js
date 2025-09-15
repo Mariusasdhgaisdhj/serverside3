@@ -4,30 +4,15 @@ class Product {
   // Create a new product
   static async create(productData) {
     try {
-      console.log('Product.create: Starting database insert...');
-      console.log('Product.create: Data to insert:', productData);
-      
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Database operation timeout')), 10000); // 10 second timeout
-      });
-      
-      const dbPromise = supabase
+      const { data, error } = await supabase
         .from('products')
         .insert([productData])
         .select()
         .single();
       
-      const { data, error } = await Promise.race([dbPromise, timeoutPromise]);
-      
-      console.log('Product.create: Database response received');
-      console.log('Product.create: Data:', data);
-      console.log('Product.create: Error:', error);
-      
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Product.create: Error occurred:', error);
       throw new Error(`Error creating product: ${error.message}`);
     }
   }
