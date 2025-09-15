@@ -6,7 +6,7 @@ const Order = require('../models/order');
 // Get all orders (Supabase)
 router.get('/', asyncHandler(async (req, res) => {
     try {
-        const { page = 1, limit = 50, status, paymentMethod, dateFrom, dateTo } = req.query;
+        const { page = 1, limit = 50, status, paymentMethod, dateFrom, dateTo, sellerId } = req.query;
 
         const filters = {
             status: status || undefined,
@@ -17,7 +17,60 @@ router.get('/', asyncHandler(async (req, res) => {
 
         const { data, total } = await Order.findAll(filters, Number(page), Number(limit));
 
-        res.json({ success: true, message: "Orders retrieved successfully.", data });
+        let orders = data || [];
+
+        // If sellerId is provided, keep only orders that include at least one item from this seller
+        if (sellerId) {
+            orders = orders.filter((o) => {
+                const items = Array.isArray(o.order_items) ? o.order_items : [];
+                return items.some((it) => it.products && it.products.seller_id === sellerId);
+            });
+        }
+
+        // Transform to frontend shape expected by mobile app
+        const transformed = orders.map((o) => ({
+            _id: o.id,
+            userID: o.users ? { _id: o.user_id, name: o.users.name } : { _id: o.user_id, name: undefined },
+            orderStatus: o.order_status,
+            items: (o.order_items || []).map((it) => ({
+                _id: it.id,
+                productID: it.product_id,
+                productName: it.product_name || it.products?.name,
+                quantity: it.quantity,
+                price: Number(it.price),
+                variant: it.variant,
+            })),
+            totalPrice: Number(o.total_price),
+            paymentMethod: o.payment_method,
+            couponCode: o.coupons ? {
+                _id: o.coupons.id,
+                couponCode: o.coupons.coupon_code,
+                discountType: o.coupons.discount_type,
+                discountAmount: o.coupons.discount_amount,
+            } : null,
+            trackingUrl: o.tracking_url,
+            orderDate: o.order_date,
+            shippingAddress: Array.isArray(o.shipping_addresses) && o.shipping_addresses.length > 0 ? {
+                phone: o.shipping_addresses[0].phone,
+                street: o.shipping_addresses[0].street,
+                city: o.shipping_addresses[0].city,
+                state: o.shipping_addresses[0].state,
+                postalCode: o.shipping_addresses[0].postal_code,
+                country: o.shipping_addresses[0].country,
+            } : null,
+            billingAddress: Array.isArray(o.billing_addresses) && o.billing_addresses.length > 0 ? {
+                phone: o.billing_addresses[0].phone,
+                street: o.billing_addresses[0].street,
+                city: o.billing_addresses[0].city,
+                state: o.billing_addresses[0].state,
+                postalCode: o.billing_addresses[0].postal_code,
+                country: o.billing_addresses[0].country,
+                companyName: o.billing_addresses[0].company_name,
+                taxId: o.billing_addresses[0].tax_id,
+            } : null,
+        }));
+
+        res.json({ success: true, message: "Orders retrieved successfully.", data: transformed, total });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

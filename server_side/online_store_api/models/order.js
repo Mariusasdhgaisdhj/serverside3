@@ -80,9 +80,10 @@ class Order {
           coupons:coupon_id(coupon_code, discount_type, discount_amount),
           order_items(
             *,
-            products:product_id(name, price)
+            products:product_id(name, price, seller_id)
           ),
-          shipping_addresses(*)
+          shipping_addresses(*),
+          billing_addresses(*)
         `)
         .eq('id', id)
         .single();
@@ -107,9 +108,10 @@ class Order {
           coupons:coupon_id(coupon_code, discount_type, discount_amount),
           order_items(
             *,
-            products:product_id(name, price)
+            products:product_id(name, price, seller_id)
           ),
-          shipping_addresses(*)
+          shipping_addresses(*),
+          billing_addresses(*)
         `, { count: 'exact' })
         .eq('user_id', userId)
         .range(from, to)
@@ -136,9 +138,10 @@ class Order {
           coupons:coupon_id(coupon_code, discount_type, discount_amount),
           order_items(
             *,
-            products:product_id(name, price)
+            products:product_id(name, price, seller_id)
           ),
-          shipping_addresses(*)
+          shipping_addresses(*),
+          billing_addresses(*)
         `, { count: 'exact' });
 
       // Apply filters
