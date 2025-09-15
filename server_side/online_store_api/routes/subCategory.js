@@ -5,11 +5,33 @@ const Brand = require('../models/brand');
 const Product = require('../models/product');
 const asyncHandler = require('express-async-handler');
 
+// Health check endpoint
+router.get('/health', (req, res) => {
+    res.json({ 
+        success: true, 
+        message: "Sub-categories API is running",
+        timestamp: new Date().toISOString()
+    });
+});
+
 // Get all sub-categories
 router.get('/', asyncHandler(async (req, res) => {
     try {
         const subCategories = await SubCategory.findAll();
-        res.json({ success: true, message: "Sub-categories retrieved successfully.", data: subCategories });
+        
+        // Transform the data to match frontend expectations
+        const transformedSubCategories = subCategories.map(sub => ({
+            _id: sub.id,
+            name: sub.name,
+            categoryId: {
+                _id: sub.categories?.id || sub.category_id,
+                name: sub.categories?.name || 'Unknown Category'
+            },
+            createdAt: sub.created_at,
+            updatedAt: sub.updated_at
+        }));
+        
+        res.json({ success: true, message: "Sub-categories retrieved successfully.", data: transformedSubCategories });
     } catch (error) {
         console.error('Error fetching sub-categories:', error);
         res.status(500).json({ 

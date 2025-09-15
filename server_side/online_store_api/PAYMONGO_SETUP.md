@@ -26,7 +26,7 @@ Add the following environment variables to your `.env` file:
 PAYMONGO_SECRET_KEY=sk_test_your_secret_key_here
 PAYMONGO_PUBLIC_KEY=pk_test_your_public_key_here
 PAYMONGO_BASE_URL=https://api.paymongo.com/v1
-PAYMONGO_SUCCESS_URL=https://yourapp.com/payment/success
+PAYMONGO_SUCCESS_URL=https://serverside3.vercel.app/payment/success
 PAYMONGO_FAILED_URL=https://yourapp.com/payment/failed
 PAYMONGO_WEBHOOK_SECRET=your_webhook_secret_here
 ```
