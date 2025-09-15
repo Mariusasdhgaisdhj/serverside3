@@ -12,7 +12,17 @@ const { supabase } = require('../config/supabase');
 router.get('/', asyncHandler(async (req, res) => {
     try {
         const categories = await Category.findAll();
-        res.json({ success: true, message: "Categories retrieved successfully.", data: categories });
+        
+        // Transform the data to match frontend expectations
+        const transformedCategories = categories.map(category => ({
+            _id: category.id,
+            name: category.name,
+            image: category.image,
+            createdAt: category.created_at,
+            updatedAt: category.updated_at
+        }));
+        
+        res.json({ success: true, message: "Categories retrieved successfully.", data: transformedCategories });
     } catch (error) {
         console.error('Error fetching categories:', error);
         res.status(500).json({ 
