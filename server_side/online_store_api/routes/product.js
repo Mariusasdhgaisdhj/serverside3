@@ -137,17 +137,19 @@ const isServerless = !!process.env.VERCEL || process.env.NODE_ENV === 'productio
 const memoryUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 1024 * 1024 * 5 }
-}).fields([
+});
+const memoryUploadFields = memoryUpload.fields([
     { name: 'image1', maxCount: 1 },
     { name: 'image2', maxCount: 1 },
     { name: 'image3', maxCount: 1 },
     { name: 'image4', maxCount: 1 },
     { name: 'image5', maxCount: 1 }
 ]);
+const memoryUploadAny = memoryUpload.any();
 
 // create new product
 router.post('/', (req, res, next) => {
-    const handler = isServerless ? memoryUpload : uploadProduct.fields([
+    const handler = isServerless ? memoryUploadAny : uploadProduct.fields([
         { name: 'image1', maxCount: 1 },
         { name: 'image2', maxCount: 1 },
         { name: 'image3', maxCount: 1 },
@@ -185,12 +187,19 @@ router.post('/', (req, res, next) => {
         const fields = ['image1', 'image2', 'image3', 'image4', 'image5'];
         const uploadedFiles = [];
         if (req.files) {
-            fields.forEach((field, idx) => {
-                if (req.files[field] && req.files[field].length > 0) {
-                    const file = req.files[field][0];
+            // Support both named fields and any()
+            if (Array.isArray(req.files)) {
+                req.files.forEach((file, idx) => {
                     uploadedFiles.push({ order: idx + 1, file });
-                }
-            });
+                });
+            } else {
+                fields.forEach((field, idx) => {
+                    if (req.files[field] && req.files[field].length > 0) {
+                        const file = req.files[field][0];
+                        uploadedFiles.push({ order: idx + 1, file });
+                    }
+                });
+            }
         }
 
             // Convert data types to ensure they match the schema
@@ -263,10 +272,10 @@ router.post('/', (req, res, next) => {
 
             // Fallback default image if none
             if (imageRows.length === 0) {
-                const fallbackUrl = isServerless
-                    ? 'https://picsum.photos/400/400?random=999'
-                    : `${req.protocol}://${req.get('host')}/image/products/default-product.jpg`;
+                // Use a fixed repo-served poster image instead of random placeholder
+                const fallbackUrl = `${req.protocol}://${req.get('host')}/image/poster/shopping.png`;
                 imageRows.push({ product_id: savedProduct.id, image_order: 1, url: fallbackUrl });
+                console.warn('No uploaded images detected; using fallback poster image');
             }
 
             // Insert image rows
