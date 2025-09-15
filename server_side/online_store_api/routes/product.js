@@ -166,10 +166,15 @@ router.post('/', uploadProduct.fields([
         fields.forEach((field, index) => {
             if (req.files && req.files[field] && req.files[field].length > 0) {
                 const file = req.files[field][0];
-                // Create URL for the uploaded file
-                const imageUrl = `${req.protocol}://${req.get('host')}/image/products/${file.filename}`;
-                imageUrls.push({ image: index + 1, url: imageUrl });
-                console.log(`Added image ${index + 1}: ${imageUrl}`);
+                try {
+                    // Create URL for the uploaded file
+                    const imageUrl = `${req.protocol}://${req.get('host')}/image/products/${file.filename}`;
+                    imageUrls.push({ image: index + 1, url: imageUrl });
+                    console.log(`Added image ${index + 1}: ${imageUrl}`);
+                } catch (imageError) {
+                    console.error(`Error processing image ${index + 1}:`, imageError);
+                    // Continue with other images even if one fails
+                }
             }
         });
 

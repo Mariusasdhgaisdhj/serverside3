@@ -1,9 +1,15 @@
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
 const storageCategory = multer.diskStorage({
   destination: function(req, file, cb) {
-    cb(null, './public/category');
+    const uploadPath = './public/category';
+    // Ensure directory exists
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
   },
   filename: function(req, file, cb) {
     // Check file type based on its extension
@@ -27,7 +33,12 @@ const uploadCategory = multer({
 
 const storageProduct = multer.diskStorage({
   destination: function(req, file, cb) {
-    cb(null, './public/products');
+    const uploadPath = './public/products';
+    // Ensure directory exists
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
   },
   filename: function(req, file, cb) {
     // Check file type based on its extension
@@ -52,7 +63,12 @@ const uploadProduct = multer({
 
 const storagePoster = multer.diskStorage({
   destination: function(req, file, cb) {
-    cb(null, './public/posters');
+    const uploadPath = './public/posters';
+    // Ensure directory exists
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
   },
   filename: function(req, file, cb) {
     // Check file type based on its extension
