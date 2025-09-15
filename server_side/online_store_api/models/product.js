@@ -41,8 +41,8 @@ class Product {
     }
   }
 
-  // Get all products with pagination and filters
-  static async findAll(filters = {}, page = 1, limit = 10) {
+  // Get all products with pagination, filters, and sorting
+  static async findAll(filters = {}, page = 1, limit = 10, sortBy = 'created_at', sortOrder = 'desc') {
     try {
       const from = (page - 1) * limit;
       const to = from + limit - 1;
@@ -82,9 +82,14 @@ class Product {
         query = query.or(`name.ilike.%${filters.search}%,description.ilike.%${filters.search}%`);
       }
 
+      // Whitelist sorting
+      const allowedSort = new Set(['created_at', 'price', 'name']);
+      const sortColumn = allowedSort.has(sortBy) ? sortBy : 'created_at';
+      const ascending = String(sortOrder).toLowerCase() === 'asc';
+
       const { data, error, count } = await query
-        .range(from, to)
-        .order('created_at', { ascending: false });
+        .order(sortColumn, { ascending })
+        .range(from, to);
       
       if (error) throw error;
       return { data, total: count };

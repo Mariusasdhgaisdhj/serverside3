@@ -6,15 +6,25 @@ const { uploadProduct } = require('../uploadFile');
 const asyncHandler = require('express-async-handler');
 const { supabase } = require('../config/supabase');
 
-// Get all products (optionally filter by sellerId)
+// Get all products (pagination, filtering, sorting)
 router.get('/', asyncHandler(async (req, res) => {
     try {
-        const filters = {};
-        if (req.query.sellerId) {
-            filters.sellerId = req.query.sellerId;
-        }
-        
-        const result = await Product.findAll(filters);
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const sortBy = req.query.sortBy || 'created_at';
+        const sortOrder = req.query.sortOrder || 'desc';
+
+        const filters = {
+            sellerId: req.query.sellerId,
+            categoryId: req.query.categoryId,
+            subCategoryId: req.query.subCategoryId,
+            brandId: req.query.brandId,
+            minPrice: req.query.minPrice ? parseFloat(req.query.minPrice) : undefined,
+            maxPrice: req.query.maxPrice ? parseFloat(req.query.maxPrice) : undefined,
+            search: req.query.search,
+        };
+
+        const result = await Product.findAll(filters, page, limit, sortBy, sortOrder);
         const products = result.data || [];
         
         // Transform the data to match frontend expectations
@@ -58,7 +68,16 @@ router.get('/', asyncHandler(async (req, res) => {
             updatedAt: product.updated_at
         }));
         
-        res.json({ success: true, message: "Products retrieved successfully.", data: transformedProducts });
+        // Lightweight caching headers (30s) for list responses
+        res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+        res.json({ 
+            success: true, 
+            message: "Products retrieved successfully.", 
+            data: transformedProducts,
+            total: result.total || 0,
+            page,
+            limit
+        });
     } catch (error) {
         console.error('Error fetching products:', error);
         res.status(500).json({ 
@@ -303,60 +322,120 @@ router.post('/', (req, res, next) => {
     }
 }));
 
-// Update a product
-router.put('/:id', asyncHandler(async (req, res) => {
+// Update a product (JSON fields + optional image uploads)
+router.put('/:id', (req, res, next) => {
+    const handler = isServerless ? memoryUploadAny : uploadProduct.fields([
+        { name: 'image1', maxCount: 1 },
+        { name: 'image2', maxCount: 1 },
+        { name: 'image3', maxCount: 1 },
+        { name: 'image4', maxCount: 1 },
+        { name: 'image5', maxCount: 1 }
+    ]);
+    handler(req, res, (err) => {
+        if (err) {
+            console.error('Update upload error:', err);
+            return res.status(500).json({ success: false, message: err.message });
+        }
+        next();
+    });
+}, asyncHandler(async (req, res) => {
     const productId = req.params.id;
     try {
-        // Execute the Multer middleware to handle file fields
-        uploadProduct.fields([
-            { name: 'image1', maxCount: 1 },
-            { name: 'image2', maxCount: 1 },
-            { name: 'image3', maxCount: 1 },
-            { name: 'image4', maxCount: 1 },
-            { name: 'image5', maxCount: 1 }
-        ])(req, res, async function (err) {
-            if (err) {
-                console.log(`Update product: ${err}`);
-                return res.status(500).json({ success: false, message: err.message });
-            }
+        // Prepare update data (snake_case for DB)
+        const { name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId } = req.body;
+        const updateData = {};
+        if (name !== undefined) updateData.name = String(name).trim();
+        if (description !== undefined) updateData.description = String(description).trim();
+        if (quantity !== undefined) updateData.quantity = parseInt(quantity);
+        if (price !== undefined) updateData.price = parseFloat(price);
+        if (offerPrice !== undefined) updateData.offer_price = parseFloat(offerPrice);
+        if (proCategoryId !== undefined) updateData.pro_category_id = proCategoryId;
+        if (proSubCategoryId !== undefined) updateData.pro_sub_category_id = proSubCategoryId;
+        if (proBrandId !== undefined) updateData.pro_brand_id = proBrandId;
+        if (proVariantTypeId !== undefined) updateData.pro_variant_type_id = proVariantTypeId;
+        if (proVariantId !== undefined) updateData.pro_variant_id = Array.isArray(proVariantId) ? proVariantId : [proVariantId];
 
-            const { name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId } = req.body;
-
-            // Prepare update data
-            const updateData = {};
-            if (name) updateData.name = name;
-            if (description) updateData.description = description;
-            if (quantity) updateData.quantity = quantity;
-            if (price) updateData.price = price;
-            if (offerPrice) updateData.offerPrice = offerPrice;
-            if (proCategoryId) updateData.proCategoryId = proCategoryId;
-            if (proSubCategoryId) updateData.proSubCategoryId = proSubCategoryId;
-            if (proBrandId) updateData.proBrandId = proBrandId;
-            if (proVariantTypeId) updateData.proVariantTypeId = proVariantTypeId;
-            if (proVariantId) updateData.proVariantId = proVariantId;
-
-            // Handle image updates
-            const fields = ['image1', 'image2', 'image3', 'image4', 'image5'];
-            const imageUpdates = [];
-            fields.forEach((field, index) => {
-                if (req.files[field] && req.files[field].length > 0) {
-                    const file = req.files[field][0];
-                    const imageUrl = `http://localhost:3000/image/products/${file.filename}`;
-                    imageUpdates.push({ image: index + 1, url: imageUrl });
-                }
-            });
-
-            if (imageUpdates.length > 0) {
-                updateData.images = imageUpdates;
-            }
-
-            // Update the product
-            const updatedProduct = await Product.update(productId, updateData);
+        // Update product fields first (if any provided)
+        let updatedProduct = null;
+        if (Object.keys(updateData).length > 0) {
+            updatedProduct = await Product.update(productId, updateData);
             if (!updatedProduct) {
                 return res.status(404).json({ success: false, message: "Product not found." });
             }
-            res.json({ success: true, message: "Product updated successfully." });
-        });
+        }
+
+        // Handle optional image uploads
+        const fields = ['image1', 'image2', 'image3', 'image4', 'image5'];
+        const uploadedFiles = [];
+        if (req.files) {
+            if (Array.isArray(req.files)) {
+                req.files.forEach((file, idx) => uploadedFiles.push({ order: idx + 1, file }));
+            } else {
+                fields.forEach((field, idx) => {
+                    if (req.files[field] && req.files[field].length > 0) {
+                        uploadedFiles.push({ order: idx + 1, file: req.files[field][0] });
+                    }
+                });
+            }
+        }
+
+        if (uploadedFiles.length > 0) {
+            const imageRows = [];
+
+            if (isServerless) {
+                for (const item of uploadedFiles) {
+                    const file = item.file;
+                    const safeName = `${Date.now()}_${Math.floor(Math.random()*1000)}_${file.originalname}`.replace(/\s+/g, '_');
+                    const storagePath = `products/${productId}/${safeName}`;
+                    const { error: uploadError } = await supabase.storage
+                        .from('product-images')
+                        .upload(storagePath, file.buffer, { contentType: file.mimetype, upsert: false });
+                    if (uploadError) {
+                        console.error('Supabase upload error (update):', uploadError);
+                        continue;
+                    }
+                    const { data: publicData, error: pubErr } = supabase.storage
+                        .from('product-images')
+                        .getPublicUrl(storagePath);
+                    if (pubErr) {
+                        console.error('Supabase public URL error (update):', pubErr);
+                        continue;
+                    }
+                    const publicUrl = publicData?.publicUrl;
+                    if (publicUrl) {
+                        imageRows.push({ product_id: productId, image_order: item.order, url: publicUrl });
+                    }
+                }
+            } else {
+                uploadedFiles.forEach((item) => {
+                    const file = item.file;
+                    const imageUrl = `${req.protocol}://${req.get('host')}/image/products/${file.filename}`;
+                    imageRows.push({ product_id: productId, image_order: item.order, url: imageUrl });
+                });
+            }
+
+            if (imageRows.length > 0) {
+                // Replace existing rows for provided image_order(s)
+                const ordersToReplace = imageRows.map(r => r.image_order);
+                const { error: delErr } = await supabase
+                    .from('product_images')
+                    .delete()
+                    .eq('product_id', productId)
+                    .in('image_order', ordersToReplace);
+                if (delErr) {
+                    console.error('Error deleting old product images on update:', delErr);
+                }
+
+                const { error: insErr } = await supabase
+                    .from('product_images')
+                    .insert(imageRows);
+                if (insErr) {
+                    console.error('Error inserting updated product images:', insErr);
+                }
+            }
+        }
+
+        return res.json({ success: true, message: "Product updated successfully." });
     } catch (error) {
         console.error("Error updating product:", error);
         res.status(500).json({ success: false, message: error.message });
