@@ -154,6 +154,21 @@ CREATE TABLE shipping_addresses (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Billing addresses table
+CREATE TABLE billing_addresses (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    phone VARCHAR(20),
+    street VARCHAR(255),
+    city VARCHAR(100),
+    state VARCHAR(100),
+    postal_code VARCHAR(20),
+    country VARCHAR(100),
+    company_name VARCHAR(255),
+    tax_id VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Conversations table (for messaging)
 CREATE TABLE conversations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

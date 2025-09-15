@@ -30,7 +30,8 @@ class Order {
             *,
             products:product_id(name, price)
           ),
-          shipping_addresses(*)
+          shipping_addresses(*),
+          billing_addresses(*)
         `)
         .eq('id', id)
         .single();
@@ -203,6 +204,25 @@ class Order {
       return data;
     } catch (error) {
       throw new Error(`Error adding shipping address: ${error.message}`);
+    }
+  }
+
+  // Add billing address
+  static async addBillingAddress(orderId, address) {
+    try {
+      const { data, error } = await supabase
+        .from('billing_addresses')
+        .insert([{
+          order_id: orderId,
+          ...address
+        }])
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      throw new Error(`Error adding billing address: ${error.message}`);
     }
   }
 

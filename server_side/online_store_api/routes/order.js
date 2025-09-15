@@ -75,15 +75,56 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
 // Create a new order
 router.post('/', asyncHandler(async (req, res) => {
-    const { userID,orderStatus, items, totalPrice, shippingAddress, paymentMethod, couponCode, orderTotal, trackingUrl } = req.body;
+    const { 
+        userID, 
+        orderStatus, 
+        items, 
+        totalPrice, 
+        shippingAddress, 
+        billingAddress,
+        paymentMethod, 
+        couponCode, 
+        orderTotal, 
+        trackingUrl 
+    } = req.body;
+    
     if (!userID || !items || !totalPrice || !shippingAddress || !paymentMethod || !orderTotal) {
-        return res.status(400).json({ success: false, message: "User ID, items, totalPrice, shippingAddress, paymentMethod, and orderTotal are required." });
+        return res.status(400).json({ 
+            success: false, 
+            message: "User ID, items, totalPrice, shippingAddress, paymentMethod, and orderTotal are required." 
+        });
     }
 
     try {
-        const order = new Order({ userID,orderStatus, items, totalPrice, shippingAddress, paymentMethod, couponCode, orderTotal, trackingUrl });
-        const newOrder = await order.save();
-        res.json({ success: true, message: "Order created successfully.", data: null });
+        // Create the order
+        const orderData = {
+            user_id: userID,
+            order_status: orderStatus || 'pending',
+            total_price: totalPrice,
+            payment_method: paymentMethod,
+            coupon_id: couponCode,
+            tracking_url: trackingUrl,
+            order_total: orderTotal
+        };
+
+        const order = await Order.create(orderData);
+        
+        // Add order items
+        await Order.addItems(order.id, items);
+        
+        // Add shipping address
+        await Order.addShippingAddress(order.id, shippingAddress);
+        
+        // Add billing address if provided
+        if (billingAddress) {
+            await Order.addBillingAddress(order.id, billingAddress);
+        }
+        
+        res.json({ 
+            success: true, 
+            message: "Order created successfully.", 
+            data: { orderId: order.id } 
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

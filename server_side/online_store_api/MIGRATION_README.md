@@ -48,6 +48,10 @@ PORT=3000
 1. Go to your Supabase project dashboard
 2. Navigate to the SQL Editor
 3. Copy and paste the contents of `database/schema.sql`
+4. **Apply Billing Address Migration**: Run the billing address migration:
+   ```sql
+   -- Copy and paste the contents of database/migrations/add_billing_addresses.sql
+   ```
 4. Execute the SQL script to create all tables and relationships
 
 ### 4. Run Data Migration
@@ -175,3 +179,44 @@ If you encounter issues during migration:
 5. **Real-time Features**: Supabase provides real-time subscriptions
 6. **Authentication**: Built-in authentication and authorization
 7. **Storage**: Integrated file storage for images and documents
+
+## Billing Address Feature
+
+### Overview
+The application now supports comprehensive billing address functionality, allowing customers to specify different billing and shipping addresses for their orders.
+
+### Features
+- **Dual Address System**: Separate shipping and billing address support
+- **Same as Shipping Option**: One-click to copy shipping address to billing
+- **Business Billing**: Optional company name and tax ID fields
+- **Complete Validation**: Full form validation for all address fields
+- **Database Integration**: Proper PostgreSQL storage with relationships
+
+### Database Schema
+```sql
+-- Billing addresses table
+CREATE TABLE billing_addresses (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    phone VARCHAR(20),
+    street VARCHAR(255),
+    city VARCHAR(100),
+    state VARCHAR(100),
+    postal_code VARCHAR(20),
+    country VARCHAR(100),
+    company_name VARCHAR(255),
+    tax_id VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+### API Endpoints
+- **POST /orders**: Create order with billing address
+- **GET /orders/:id**: Retrieve order with both addresses
+- **Billing Address Fields**: phone, street, city, state, postal_code, country, company_name, tax_id
+
+### Testing
+Run the billing address integration test:
+```bash
+node test_billing_address.js
+```
