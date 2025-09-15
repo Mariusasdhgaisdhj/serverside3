@@ -37,7 +37,6 @@ async function addSubcategories() {
         { name: 'Rice', category_id: firstCategory.id },
         { name: 'Wheat', category_id: firstCategory.id },
         { name: 'Corn', category_id: firstCategory.id },
-        { name: 'Barley', category_id: firstCategory.id },
         { name: 'Oats', category_id: firstCategory.id }
       ];
       
