@@ -126,6 +126,33 @@ router.post('/', asyncHandler(async (req, res) => {
     }
 
     try {
+        // Validate that user is not trying to buy their own products
+        const { supabase } = require('../config/supabase');
+        const productIds = Array.isArray(items) ? items.map((it) => it.productID).filter(Boolean) : [];
+        
+        if (productIds.length > 0) {
+            const { data: products, error: proErr } = await supabase
+                .from('products')
+                .select('id, seller_id')
+                .in('id', productIds);
+            
+            if (proErr) {
+                return res.status(500).json({ 
+                    success: false, 
+                    message: "Error validating products: " + proErr.message 
+                });
+            }
+            
+            // Check if any product belongs to the buyer
+            const selfOwnedProducts = products.filter(p => p.seller_id === userID);
+            if (selfOwnedProducts.length > 0) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: "You cannot purchase your own products. Please remove your products from the cart." 
+                });
+            }
+        }
+
         // Create the order
         // Map nested totals to flat columns
         const orderData = {
