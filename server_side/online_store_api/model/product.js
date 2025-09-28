@@ -28,7 +28,7 @@ class Product {
           subcategories:pro_sub_category_id(name),
           brands:pro_brand_id(name),
           variant_types:pro_variant_type_id(name, type),
-          users:seller_id(name, email),
+          users:seller_id(name, email, business_name, verified),
           product_images(*)
         `)
         .eq('id', id)
@@ -55,7 +55,7 @@ class Product {
           subcategories:pro_sub_category_id(name),
           brands:pro_brand_id(name),
           variant_types:pro_variant_type_id(name, type),
-          users:seller_id(name, email),
+          users:seller_id(name, email, business_name, verified),
           product_images(*)
         `, { count: 'exact' });
 
