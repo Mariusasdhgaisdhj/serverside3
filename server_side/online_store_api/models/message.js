@@ -161,8 +161,8 @@ class Conversation {
         .from('conversations')
         .select(`
           *,
-          buyer:buyer_id(name, email),
-          seller:seller_id(name, email)
+          buyer:buyer_id(name, email, business_name),
+          seller:seller_id(name, email, business_name)
         `, { count: 'exact' })
         .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
         .range(from, to)
