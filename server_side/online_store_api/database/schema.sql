@@ -205,6 +205,15 @@ CREATE TABLE comments (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Post views table (for tracking who viewed which posts)
+CREATE TABLE post_views (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    post_id UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    viewed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(post_id, user_id)
+);
+
 -- Notifications table
 CREATE TABLE notifications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

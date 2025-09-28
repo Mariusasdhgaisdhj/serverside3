@@ -43,6 +43,7 @@ app.use('/payment', require('./routes/payment'));
 app.use('/notification', require('./routes/notification'));
 app.use('/messages', require('./routes/message'));
 app.use('/sellers', require('./routes/seller'));
+app.use('/post-views', require('./routes/post_views'));
 // app.use('/migrate', require('./routes/migrate')); // Temporary migration endpoint - REMOVED
 
 // Root
