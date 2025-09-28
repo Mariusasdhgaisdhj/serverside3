@@ -105,6 +105,8 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
 // Create a new order
 router.post('/', asyncHandler(async (req, res) => {
+    console.log('Order creation request received:', JSON.stringify(req.body, null, 2));
+    
     const { 
         userID, 
         orderStatus, 
@@ -119,6 +121,14 @@ router.post('/', asyncHandler(async (req, res) => {
     } = req.body;
     
     if (!userID || !items || !totalPrice || !shippingAddress || !paymentMethod || !orderTotal) {
+        console.log('Missing required fields:', {
+            userID: !!userID,
+            items: !!items,
+            totalPrice: !!totalPrice,
+            shippingAddress: !!shippingAddress,
+            paymentMethod: !!paymentMethod,
+            orderTotal: !!orderTotal
+        });
         return res.status(400).json({ 
             success: false, 
             message: "User ID, items, totalPrice, shippingAddress, paymentMethod, and orderTotal are required." 
@@ -167,17 +177,25 @@ router.post('/', asyncHandler(async (req, res) => {
             total: orderTotal?.total
         };
 
+        console.log('Creating order with data:', orderData);
         const order = await Order.create(orderData);
+        console.log('Order created successfully:', order.id);
         
         // Add order items
+        console.log('Adding order items:', items);
         await Order.addItems(order.id, items);
+        console.log('Order items added successfully');
         
         // Add shipping address
+        console.log('Adding shipping address:', shippingAddress);
         await Order.addShippingAddress(order.id, shippingAddress);
+        console.log('Shipping address added successfully');
         
         // Add billing address if provided
         if (billingAddress) {
+            console.log('Adding billing address:', billingAddress);
             await Order.addBillingAddress(order.id, billingAddress);
+            console.log('Billing address added successfully');
         }
         
         // Auto-create conversation(s) between buyer and seller(s)
@@ -209,7 +227,12 @@ router.post('/', asyncHandler(async (req, res) => {
             data: { orderId: order.id } 
         });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('Error creating order:', error);
+        console.error('Error stack:', error.stack);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message || "Failed to create order" 
+        });
     }
 }));
 
