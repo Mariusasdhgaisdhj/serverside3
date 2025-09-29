@@ -3,6 +3,7 @@ const asyncHandler = require('express-async-handler');
 const router = express.Router();
 const { Post, Comment } = require('../models/post');
 const User = require('../models/user');
+const { supabase } = require('../config/supabase');
 
 // list posts
 router.get('/', asyncHandler(async (req, res) => {
@@ -149,6 +150,47 @@ router.post('/:postId/comments', asyncHandler(async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Failed to add comment', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
+// Get comments for a post
+router.get('/:postId/comments', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    
+    // Check if post exists
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Post not found' 
+      });
+    }
+    
+    // Get comments for this post
+    const { data, error } = await supabase
+      .from('comments')
+      .select(`
+        *,
+        users:user_id(name, email)
+      `)
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true });
+    
+    if (error) throw error;
+    
+    res.json({ 
+      success: true, 
+      message: 'Comments fetched successfully', 
+      data: data || []
+    });
+  } catch (error) {
+    console.error('Error fetching comments:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch comments', 
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
