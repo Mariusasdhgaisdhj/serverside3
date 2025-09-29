@@ -193,12 +193,19 @@ router.post('/sync-external', asyncHandler(async (req, res) => {
             console.log('User created successfully');
         } else {
             console.log('Updating existing user...');
-            // Update existing user
-            user = await User.update(user.id, {
+            // Update existing user while preserving addressinfo
+            const updateData = {
                 external_auth_id: externalAuthId, 
                 name, 
                 email
-            });
+            };
+            
+            // Preserve existing addressinfo if it exists
+            if (user.addressinfo) {
+                updateData.addressinfo = user.addressinfo;
+            }
+            
+            user = await User.update(user.id, updateData);
             console.log('User updated successfully');
         }
         

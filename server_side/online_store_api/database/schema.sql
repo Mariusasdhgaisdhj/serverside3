@@ -16,6 +16,8 @@ CREATE TABLE users (
     phone VARCHAR(20),
     paypal_email VARCHAR(255),
     verified BOOLEAN DEFAULT FALSE,
+    profilepicture VARCHAR(500),
+    addressinfo JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
