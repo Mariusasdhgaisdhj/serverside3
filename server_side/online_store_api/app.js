@@ -163,6 +163,28 @@ app.get('/admin/stats', asyncHandler(async (req, res) => {
   }
 }));
 
+// Debug endpoint to check users
+app.get('/debug/users', asyncHandler(async (req, res) => {
+  try {
+    const User = require('./models/user');
+    const { data: users, total } = await User.findAll(1, 10);
+    
+    res.json({
+      success: true,
+      message: 'Users retrieved successfully',
+      data: users,
+      total: total
+    });
+  } catch (error) {
+    console.error('Debug users error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch users',
+      error: error.message
+    });
+  }
+}));
+
 // Root
 app.get('/', asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'API working successfully', data: null });
