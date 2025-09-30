@@ -47,6 +47,33 @@ app.use('/post-views', require('./routes/post_views'));
 // app.use('/migrate', require('./routes/migrate')); // Temporary migration endpoint - REMOVED
 
 
+// Debug endpoint to check what users exist
+app.get('/debug-users', asyncHandler(async (req, res) => {
+  try {
+    const User = require('./models/user');
+    const { data: users } = await User.findAll(1, 10);
+    
+    res.json({
+      success: true,
+      message: 'Users retrieved successfully',
+      data: users.map(user => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        password: user.password ? '***' : 'none'
+      }))
+    });
+  } catch (error) {
+    console.error('Debug users error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch users',
+      error: error.message
+    });
+  }
+}));
+
 // Root
 app.get('/', asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'API working successfully', data: null });
