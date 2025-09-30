@@ -46,36 +46,38 @@ app.use('/sellers', require('./routes/seller'));
 app.use('/post-views', require('./routes/post_views'));
 // app.use('/migrate', require('./routes/migrate')); // Temporary migration endpoint - REMOVED
 
-// Authentication routes
+// Authentication routes - using existing user system
 app.post('/auth/login', asyncHandler(async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    // Simple authentication - in production, use proper password hashing
-    if (email === "admin@example.com" && password === "admin123") {
-      const user = {
-        id: 1,
-        username: "admin",
-        email: "admin@example.com",
-        firstName: "Admin",
-        lastName: "User",
-        title: "System Administrator",
-        isAdmin: true,
-        createdAt: new Date().toISOString()
-      };
-      
-      res.json({
-        success: true,
-        message: "Login successful",
-        data: user
-      });
-    } else {
-      res.status(401).json({
+    // Use existing user system
+    const User = require('./models/user');
+    const user = await User.findByEmail(email);
+    
+    if (!user) {
+      return res.status(401).json({
         success: false,
-        message: "Invalid credentials"
+        message: "Invalid email or password"
       });
     }
+    
+    // Check password (you might want to use proper password hashing)
+    if (user.password !== password) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password"
+      });
+    }
+    
+    // Return user data
+    res.json({
+      success: true,
+      message: "Login successful",
+      data: user
+    });
   } catch (error) {
+    console.error('Login error:', error);
     res.status(500).json({
       success: false,
       message: "Internal server error"
@@ -90,36 +92,56 @@ app.post('/auth/logout', (req, res) => {
   });
 });
 
-app.get('/auth/me', (req, res) => {
-  // In a real app, this would check session/token
-  const user = {
-    id: 1,
-    username: "admin",
-    email: "admin@example.com",
-    firstName: "Admin",
-    lastName: "User",
-    title: "System Administrator",
-    isAdmin: true,
-    createdAt: new Date().toISOString()
-  };
-  
-  res.json({
-    success: true,
-    data: user
-  });
-});
+app.get('/auth/me', asyncHandler(async (req, res) => {
+  try {
+    // For now, return a default admin user
+    // In production, you'd check session/token and get actual user
+    const User = require('./models/user');
+    const users = await User.findAll();
+    const adminUser = users.find(user => user.role === 'admin');
+    
+    if (adminUser) {
+      res.json({
+        success: true,
+        data: adminUser
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: "No admin user found"
+      });
+    }
+  } catch (error) {
+    console.error('Auth me error:', error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error"
+    });
+  }
+}));
 
 // Admin routes
-app.get('/admin/stats', (req, res) => {
-  res.json({
-    success: true,
-    data: {
-      totalUsers: 150,
-      activeSessions: 23,
-      systemStatus: "Online"
-    }
-  });
-});
+app.get('/admin/stats', asyncHandler(async (req, res) => {
+  try {
+    const User = require('./models/user');
+    const users = await User.findAll();
+    
+    res.json({
+      success: true,
+      data: {
+        totalUsers: users.length,
+        activeSessions: 23, // You can implement session tracking
+        systemStatus: "Online"
+      }
+    });
+  } catch (error) {
+    console.error('Admin stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch admin stats"
+    });
+  }
+}));
 
 // Root
 app.get('/', asyncHandler(async (req, res) => {
