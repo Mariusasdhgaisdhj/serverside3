@@ -37,22 +37,27 @@ router.get('/search', asyncHandler(async (req, res) => {
 
 // login
 router.post('/login', async (req, res) => {
-    const { name, password } = req.body;
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).json({ success: false, message: "Email and password are required." });
+    }
 
     try {
-        // Check if the user exists
-        const user = await User.findByEmail(name);
+        // Check if the user exists by email
+        const user = await User.findByEmail(email);
 
         if (!user) {
-            return res.status(401).json({ success: false, message: "Invalid name or password." });
+            return res.status(401).json({ success: false, message: "Invalid email or password." });
         }
+        
         // Check if the password is correct
         if (user.password !== password) {
-            return res.status(401).json({ success: false, message: "Invalid name or password." });
+            return res.status(401).json({ success: false, message: "Invalid email or password." });
         }
 
         // Authentication successful
-        res.status(200).json({ success: true, message: "Login successful.",data: user });
+        res.status(200).json({ success: true, message: "Login successful.", data: user });
     } catch (error) {
         console.error('Error during login:', error);
         res.status(500).json({ 
