@@ -51,7 +51,7 @@ app.post('/auth/login', asyncHandler(async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    // Use existing user system
+    // Use existing user system - same logic as /users/login
     const User = require('./models/user');
     const user = await User.findByEmail(email);
     
@@ -62,7 +62,7 @@ app.post('/auth/login', asyncHandler(async (req, res) => {
       });
     }
     
-    // Check password (you might want to use proper password hashing)
+    // Check password (same as existing system)
     if (user.password !== password) {
       return res.status(401).json({
         success: false,
@@ -70,11 +70,21 @@ app.post('/auth/login', asyncHandler(async (req, res) => {
       });
     }
     
-    // Return user data
+    // Return user data in the format expected by frontend
     res.json({
       success: true,
       message: "Login successful",
-      data: user
+      data: {
+        id: user.id,
+        username: user.name,
+        email: user.email,
+        firstName: user.name,
+        lastName: user.name,
+        title: user.role === 'admin' ? 'System Administrator' : user.role,
+        isAdmin: user.role === 'admin',
+        role: user.role,
+        createdAt: user.created_at
+      }
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -94,16 +104,26 @@ app.post('/auth/logout', (req, res) => {
 
 app.get('/auth/me', asyncHandler(async (req, res) => {
   try {
-    // For now, return a default admin user
-    // In production, you'd check session/token and get actual user
+    // For now, return the first admin user from database
+    // In production, you'd check session/token and get actual logged-in user
     const User = require('./models/user');
-    const users = await User.findAll();
+    const { data: users } = await User.findAll(1, 100); // Get first 100 users
     const adminUser = users.find(user => user.role === 'admin');
     
     if (adminUser) {
       res.json({
         success: true,
-        data: adminUser
+        data: {
+          id: adminUser.id,
+          username: adminUser.name,
+          email: adminUser.email,
+          firstName: adminUser.name,
+          lastName: adminUser.name,
+          title: 'System Administrator',
+          isAdmin: true,
+          role: adminUser.role,
+          createdAt: adminUser.created_at
+        }
       });
     } else {
       res.status(404).json({
@@ -124,12 +144,12 @@ app.get('/auth/me', asyncHandler(async (req, res) => {
 app.get('/admin/stats', asyncHandler(async (req, res) => {
   try {
     const User = require('./models/user');
-    const users = await User.findAll();
+    const { data: users, total } = await User.findAll(1, 1000); // Get up to 1000 users for stats
     
     res.json({
       success: true,
       data: {
-        totalUsers: users.length,
+        totalUsers: total || users.length,
         activeSessions: 23, // You can implement session tracking
         systemStatus: "Online"
       }
