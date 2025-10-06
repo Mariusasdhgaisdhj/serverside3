@@ -1,8 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const SubCategory = require('../models/subCategory');
-const Brand = require('../models/brand');
-const Product = require('../models/product');
+const { supabase } = require('../config/supabase'); // Assuming this is exported correctly
 const asyncHandler = require('express-async-handler');
 
 // Health check endpoint
@@ -17,8 +15,6 @@ router.get('/health', (req, res) => {
 // Seed subcategories endpoint (for development)
 router.post('/seed', asyncHandler(async (req, res) => {
     try {
-        const { supabase } = require('../config/supabase');
-        
         // Get all categories
         const { data: categories, error: catError } = await supabase
             .from('categories')
@@ -98,8 +94,23 @@ router.post('/seed', asyncHandler(async (req, res) => {
 // Get all sub-categories
 router.get('/', asyncHandler(async (req, res) => {
     try {
-        const subCategories = await SubCategory.findAll();
-        
+        const { data: subCategories, error } = await supabase
+            .from('subcategories')
+            .select(`
+                id,
+                name,
+                created_at,
+                updated_at,
+                categories (
+                    id,
+                    name
+                )
+            `);
+
+        if (error) {
+            throw error;
+        }
+
         // Transform the data to match frontend expectations
         const transformedSubCategories = subCategories.map(sub => ({
             _id: sub.id,
@@ -127,11 +138,42 @@ router.get('/', asyncHandler(async (req, res) => {
 router.get('/:id', asyncHandler(async (req, res) => {
     try {
         const subCategoryID = req.params.id;
-        const subCategory = await SubCategory.findById(subCategoryID);
+        const { data: subCategory, error } = await supabase
+            .from('subcategories')
+            .select(`
+                id,
+                name,
+                created_at,
+                updated_at,
+                categories (
+                    id,
+                    name
+                )
+            `)
+            .eq('id', subCategoryID)
+            .single();
+
+        if (error && error.code !== 'PGRST116') { // PGRST116 is no rows found
+            throw error;
+        }
+
         if (!subCategory) {
             return res.status(404).json({ success: false, message: "Sub-category not found." });
         }
-        res.json({ success: true, message: "Sub-category retrieved successfully.", data: subCategory });
+
+        // Transform to match frontend
+        const transformedSubCategory = {
+            _id: subCategory.id,
+            name: subCategory.name,
+            categoryId: {
+                _id: subCategory.categories?.id,
+                name: subCategory.categories?.name || 'Unknown Category'
+            },
+            createdAt: subCategory.created_at,
+            updatedAt: subCategory.updated_at
+        };
+
+        res.json({ success: true, message: "Sub-category retrieved successfully.", data: transformedSubCategory });
     } catch (error) {
         console.error('Error fetching sub-category:', error);
         res.status(500).json({ 
@@ -150,10 +192,19 @@ router.post('/', asyncHandler(async (req, res) => {
     }
 
     try {
-        const subCategory = new SubCategory({ name, categoryId });
-        const newSubCategory = await subCategory.save();
+        const { data: newSubCategory, error } = await supabase
+            .from('subcategories')
+            .insert({ name: name.trim(), category_id: categoryId })
+            .select()
+            .single();
+
+        if (error) {
+            throw error;
+        }
+
         res.json({ success: true, message: "Sub-category created successfully.", data: null });
     } catch (error) {
+        console.error('Error creating sub-category:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 }));
@@ -162,19 +213,31 @@ router.post('/', asyncHandler(async (req, res) => {
 router.put('/:id', asyncHandler(async (req, res) => {
     const subCategoryID = req.params.id;
     const { name, categoryId } = req.body;
-    console.log(req.body)
-    console.log(subCategoryID)
+    console.log(req.body);
+    console.log(subCategoryID);
     if (!name || !categoryId) {
         return res.status(400).json({ success: false, message: "Name and category ID are required." });
     }
 
     try {
-        const updatedSubCategory = await SubCategory.findByIdAndUpdate(subCategoryID, { name, categoryId }, { new: true });
+        const { data: updatedSubCategory, error } = await supabase
+            .from('subcategories')
+            .update({ name: name.trim(), category_id: categoryId })
+            .eq('id', subCategoryID)
+            .select()
+            .single();
+
+        if (error) {
+            throw error;
+        }
+
         if (!updatedSubCategory) {
             return res.status(404).json({ success: false, message: "Sub-category not found." });
         }
+
         res.json({ success: true, message: "Sub-category updated successfully.", data: null });
     } catch (error) {
+        console.error('Error updating sub-category:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 }));
@@ -184,27 +247,64 @@ router.delete('/:id', asyncHandler(async (req, res) => {
     const subCategoryID = req.params.id;
     try {
         // Check if any brand is associated with the sub-category
-        const brandCount = await Brand.countDocuments({ subcategoryId: subCategoryID });
+        // Assuming 'brands' table has 'subcategory_id' column
+        const { count: brandCount, error: brandError } = await supabase
+            .from('brands')
+            .select('*', { count: 'exact', head: true })
+            .eq('subcategory_id', subCategoryID);
+
+        if (brandError) {
+            throw brandError;
+        }
+
         if (brandCount > 0) {
             return res.status(400).json({ success: false, message: "Cannot delete sub-category. It is associated with one or more brands." });
         }
 
         // Check if any products reference this sub-category
-        const products = await Product.find({ proSubCategoryId: subCategoryID });
-        if (products.length > 0) {
+        // Assuming 'products' table has 'pro_sub_category_id' column
+        const { data: products, error: productError } = await supabase
+            .from('products')
+            .select('id')
+            .eq('pro_sub_category_id', subCategoryID);
+
+        if (productError) {
+            throw productError;
+        }
+
+        if (products && products.length > 0) {
             return res.status(400).json({ success: false, message: "Cannot delete sub-category. Products are referencing it." });
         }
 
-        // If no brands or products are associated, proceed with deletion of the sub-category
-        const subCategory = await SubCategory.findByIdAndDelete(subCategoryID);
+        // If no brands or products are associated, proceed with deletion
+        const { data: subCategory, error: deleteError } = await supabase
+            .from('subcategories')
+            .select('id')
+            .eq('id', subCategoryID)
+            .single();
+
+        if (deleteError && deleteError.code !== 'PGRST116') {
+            throw deleteError;
+        }
+
         if (!subCategory) {
             return res.status(404).json({ success: false, message: "Sub-category not found." });
         }
+
+        const { error: deleteSubError } = await supabase
+            .from('subcategories')
+            .delete()
+            .eq('id', subCategoryID);
+
+        if (deleteSubError) {
+            throw deleteSubError;
+        }
+
         res.json({ success: true, message: "Sub-category deleted successfully." });
     } catch (error) {
+        console.error('Error deleting sub-category:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 }));
-
 
 module.exports = router;
