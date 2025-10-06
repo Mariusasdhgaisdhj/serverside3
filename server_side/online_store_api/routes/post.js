@@ -93,6 +93,30 @@ router.post('/', asyncHandler(async (req, res) => {
   }
 }));
 
+// update post
+router.put('/:postId', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { title, content, category } = req.body || {};
+    if (!title && !content && !category) {
+      return res.status(400).json({ success: false, message: 'Nothing to update' });
+    }
+    const updateData = {};
+    if (title) updateData.title = String(title).trim();
+    if (content) updateData.content = String(content).trim();
+    if (category) updateData.category = String(category).trim();
+    updateData.updated_at = new Date().toISOString();
+
+    const updated = await Post.update(postId, updateData);
+    if (!updated) return res.status(404).json({ success: false, message: 'Post not found' });
+
+    res.json({ success: true, message: 'Post updated successfully', data: updated });
+  } catch (error) {
+    console.error('Error updating post:', error);
+    res.status(500).json({ success: false, message: 'Failed to update post' });
+  }
+}));
+
 // add comment
 router.post('/:postId/comments', asyncHandler(async (req, res) => {
   try {
@@ -314,6 +338,22 @@ router.post('/:postId/delete', asyncHandler(async (req, res) => {
       message: 'Failed to delete post', 
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
+  }
+}));
+
+// Delete a single comment
+router.delete('/comments/:commentId', asyncHandler(async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { error } = await supabase
+      .from('comments')
+      .delete()
+      .eq('id', commentId);
+    if (error) throw error;
+    res.json({ success: true, message: 'Comment deleted' });
+  } catch (error) {
+    console.error('Error deleting comment:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete comment' });
   }
 }));
 
