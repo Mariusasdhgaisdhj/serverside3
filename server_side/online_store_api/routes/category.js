@@ -108,18 +108,24 @@ router.put('/:id', asyncHandler(async (req, res) => {
             }
 
             const { name } = req.body;
-            let image = req.body.image;
+            let image = req.body.image; // may be provided by client as existing URL
 
-            if (req.file) {
-                image = `http://localhost:3000/image/category/${req.file.filename}`;
+            // If a new file is uploaded, build a URL using current host
+            if (req.file && req.file.filename) {
+                const host = req.get('host');
+                const protocol = req.protocol;
+                image = `${protocol}://${host}/image/category/${req.file.filename}`;
             }
 
-            if (!name || !image) {
-                return res.status(400).json({ success: false, message: "Name and image are required." });
+            if (!name) {
+                return res.status(400).json({ success: false, message: "Name is required." });
             }
 
             try {
-                const updatedCategory = await Category.update(categoryID, { name: name, image: image });
+                const updatePayload = { name };
+                if (image) updatePayload.image = image;
+
+                const updatedCategory = await Category.update(categoryID, updatePayload);
                 if (!updatedCategory) {
                     return res.status(404).json({ success: false, message: "Category not found." });
                 }
