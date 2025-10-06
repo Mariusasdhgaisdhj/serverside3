@@ -2,6 +2,8 @@ const express = require('express');
 const asyncHandler = require('express-async-handler');
 const router = express.Router();
 const User = require('../models/user');
+const { uploadCategory } = require('../uploadFile');
+const { supabase } = require('../config/supabase');
 
 // Get all users
 router.get('/', asyncHandler(async (req, res) => {
@@ -248,3 +250,35 @@ router.post('/:id/promote-admin', asyncHandler(async (req, res) => {
 }));
 
 module.exports = router;
+// Avatar upload
+router.post('/:id/avatar', asyncHandler(async (req, res) => {
+  const userID = req.params.id;
+  await new Promise((resolve) => uploadCategory.single('img')(req, res, resolve));
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, message: 'Image file is required (img)' });
+    }
+    const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase();
+    const fileName = `${Date.now()}_${Math.floor(Math.random()*1000)}.${ext}`;
+    const filePath = `avatars/${fileName}`;
+
+    const { error: upErr } = await supabase
+      .storage
+      .from('product-images')
+      .upload(filePath, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
+    if (upErr) return res.status(500).json({ success: false, message: `Upload failed: ${upErr.message}` });
+
+    const { data: pub } = supabase.storage.from('product-images').getPublicUrl(filePath);
+    const url = pub?.publicUrl;
+    if (!url) return res.status(500).json({ success: false, message: 'Failed to get public URL' });
+
+    // Optionally persist on user immediately
+    try {
+      await User.update(userID, { profilepicture: url, updated_at: new Date().toISOString() });
+    } catch (_) {}
+
+    res.json({ success: true, message: 'Avatar uploaded', data: { url } });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+}));
