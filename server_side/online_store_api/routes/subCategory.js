@@ -214,8 +214,8 @@
             }
 
             // If no brands or products are associated, proceed with deletion of the sub-category
-            const subCategory = await SubCategory.findByIdAndDelete(subCategoryID);
-            if (!subCategory) {
+            const deleted = await SubCategory.delete(subCategoryID);
+            if (!deleted) {
                 return res.status(404).json({ success: false, message: "Sub-category not found." });
             }
             res.json({ success: true, message: "Sub-category deleted successfully." });
