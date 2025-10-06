@@ -2,33 +2,21 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-const storageCategory = multer.diskStorage({
-  destination: function(req, file, cb) {
-    const uploadPath = './public/category';
-    // Ensure directory exists
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
-  },
-  filename: function(req, file, cb) {
-    // Check file type based on its extension
-    const filetypes = /jpeg|jpg|png/;
-    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-
-    if (extname) {
-      cb(null, Date.now() + "_" + Math.floor(Math.random() * 1000) + path.extname(file.originalname));
-    } else {
-      cb("Error: only .jpeg, .jpg, .png files are allowed!");
-    }
-  }
-});
+// Use memory storage for categories to support serverless + Supabase upload
+const storageCategory = multer.memoryStorage();
 
 const uploadCategory = multer({
   storage: storageCategory,
   limits: {
     fileSize: 1024 * 1024 * 5 // limit filesize to 5MB
   },
+  fileFilter: (req, file, cb) => {
+    const filetypes = /jpeg|jpg|png/;
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = filetypes.test(file.mimetype);
+    if (extname && mimetype) return cb(null, true);
+    cb(new Error('Error: only .jpeg, .jpg, .png files are allowed!'));
+  }
 });
 
 const storageProduct = multer.diskStorage({
@@ -91,7 +79,7 @@ const uploadPosters = multer({
 });
 
 module.exports = {
-    uploadCategory,
-    uploadProduct,
-    uploadPosters,
+  uploadCategory,
+  uploadProduct,
+  uploadPosters,
 };

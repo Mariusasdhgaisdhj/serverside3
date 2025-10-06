@@ -110,18 +110,36 @@ router.put('/:id', asyncHandler(async (req, res) => {
             const { name } = req.body;
             let image = req.body.image; // may be provided by client as existing URL
 
-            // If a new file is uploaded, build a URL using current host
-            if (req.file && req.file.filename) {
-                const host = req.get('host');
-                const protocol = req.protocol;
-                image = `${protocol}://${host}/image/category/${req.file.filename}`;
-            }
-
-            if (!name) {
-                return res.status(400).json({ success: false, message: "Name is required." });
-            }
-
             try {
+                if (req.file && req.file.buffer) {
+                    // Upload to Supabase Storage
+                    const fileExt = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase();
+                    const fileName = `${Date.now()}_${Math.floor(Math.random()*1000)}.${fileExt}`;
+                    const filePath = `categories/${fileName}`;
+
+                    const { data: up, error: upErr } = await supabase
+                      .storage
+                      .from('product-images')
+                      .upload(filePath, req.file.buffer, {
+                        contentType: req.file.mimetype,
+                        upsert: false,
+                      });
+
+                    if (upErr) {
+                      return res.status(500).json({ success: false, message: `Upload failed: ${upErr.message}` });
+                    }
+
+                    const { data: pub } = supabase
+                      .storage
+                      .from('product-images')
+                      .getPublicUrl(filePath);
+                    image = pub?.publicUrl || image;
+                }
+
+                if (!name) {
+                    return res.status(400).json({ success: false, message: "Name is required." });
+                }
+
                 const updatePayload = { name };
                 if (image) updatePayload.image = image;
 
@@ -131,6 +149,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
                 }
                 res.json({ success: true, message: "Category updated successfully.", data: updatedCategory });
             } catch (error) {
+                console.error('Update category error:', error);
                 res.status(500).json({ success: false, message: error.message });
             }
 
