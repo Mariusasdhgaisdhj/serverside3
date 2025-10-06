@@ -183,15 +183,33 @@
     router.delete('/:id', asyncHandler(async (req, res) => {
         const subCategoryID = req.params.id;
         try {
-            // Check if any brand is associated with the sub-category
-            const brandCount = await Brand.countDocuments({ subcategoryId: subCategoryID });
-            if (brandCount > 0) {
+            const { supabase } = require('../config/supabase');
+
+            // Check if any brand is associated with the sub-category (brands.subcategory_id)
+            const { data: brandRows, error: brandErr } = await supabase
+                .from('brands')
+                .select('id')
+                .eq('subcategory_id', subCategoryID)
+                .limit(1);
+
+            if (brandErr) {
+                return res.status(500).json({ success: false, message: `Failed checking brands: ${brandErr.message}` });
+            }
+            if (Array.isArray(brandRows) && brandRows.length > 0) {
                 return res.status(400).json({ success: false, message: "Cannot delete sub-category. It is associated with one or more brands." });
             }
 
-            // Check if any products reference this sub-category
-            const products = await Product.find({ proSubCategoryId: subCategoryID });
-            if (products.length > 0) {
+            // Check if any products reference this sub-category (products.pro_sub_category_id)
+            const { data: productRows, error: prodErr } = await supabase
+                .from('products')
+                .select('id')
+                .eq('pro_sub_category_id', subCategoryID)
+                .limit(1);
+
+            if (prodErr) {
+                return res.status(500).json({ success: false, message: `Failed checking products: ${prodErr.message}` });
+            }
+            if (Array.isArray(productRows) && productRows.length > 0) {
                 return res.status(400).json({ success: false, message: "Cannot delete sub-category. Products are referencing it." });
             }
 
