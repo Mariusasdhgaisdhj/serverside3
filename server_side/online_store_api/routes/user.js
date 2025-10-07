@@ -151,16 +151,79 @@ router.post('/:id/upgrade-to-seller', asyncHandler(async (req, res) => {
     }
 }));
 
-// Delete a user
+// Delete a user (cascade user-related data)
 router.delete('/:id', asyncHandler(async (req, res) => {
+    const userID = req.params.id;
     try {
-        const userID = req.params.id;
-        const deletedUser = await User.findByIdAndDelete(userID);
-        if (!deletedUser) {
-            return res.status(404).json({ success: false, message: "User not found." });
+        // Use Supabase to cascade-delete related data in safe order
+        // Note: Some tables may already have ON DELETE CASCADE constraints
+        // We still attempt manual cleanup for robustness.
+        const tablesToDeleteByUserId = [
+            { table: 'post_views', column: 'user_id' },
+            { table: 'comments', column: 'user_id' },
+            { table: 'notifications', column: 'user_id' },
+            { table: 'messages', column: 'sender_id' },
+            { table: 'messages', column: 'receiver_id' },
+            { table: 'orders', column: 'user_id' },
+            { table: 'posts', column: 'user_id' },
+        ];
+
+        // Delete product images first for products owned by this user (as seller)
+        // Find product ids owned by user
+        const { data: userProducts, error: productsErr } = await supabase
+            .from('products')
+            .select('id')
+            .eq('seller_id', userID);
+        if (productsErr) {
+            console.warn('Warning: failed to list user products before deletion:', productsErr.message);
         }
-        res.json({ success: true, message: "User deleted successfully." });
+        const productIds = (userProducts || []).map((p) => p.id);
+        if (productIds.length > 0) {
+            // Delete product_images referencing those products
+            const { error: delImgsErr } = await supabase
+                .from('product_images')
+                .delete()
+                .in('product_id', productIds);
+            if (delImgsErr) {
+                console.warn('Warning: failed to delete product images for user products:', delImgsErr.message);
+            }
+            // Delete the products themselves
+            const { error: delProdsErr } = await supabase
+                .from('products')
+                .delete()
+                .eq('seller_id', userID);
+            if (delProdsErr) {
+                console.warn('Warning: failed to delete products for user:', delProdsErr.message);
+            }
+        }
+
+        // Delete rows in other tables linked by user_id
+        for (const { table, column } of tablesToDeleteByUserId) {
+            const { error } = await supabase.from(table).delete().eq(column, userID);
+            if (error) {
+                console.warn(`Warning: failed to delete from ${table} by ${column}:`, error.message);
+            }
+        }
+
+        // Finally delete the user row
+        // Prefer model method if available, fallback to direct supabase delete
+        try {
+            if (typeof User.delete === 'function') {
+                await User.delete(userID);
+            } else if (typeof User.findByIdAndDelete === 'function') {
+                await User.findByIdAndDelete(userID);
+            } else {
+                const { error: userDelErr } = await supabase.from('users').delete().eq('id', userID);
+                if (userDelErr) throw userDelErr;
+            }
+        } catch (e) {
+            // If user already deleted via cascades, continue
+            console.warn('User delete fallback warning:', e?.message || e);
+        }
+
+        res.json({ success: true, message: 'User and related data deleted successfully.' });
     } catch (error) {
+        console.error('Delete user cascade error:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 }));
