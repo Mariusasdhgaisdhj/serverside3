@@ -100,6 +100,48 @@ router.post('/register', asyncHandler(async (req, res) => {
     }
 }));
 
+// Create a Supabase Auth user (admin) and ensure a matching row exists in users table
+router.post('/create-auth', asyncHandler(async (req, res) => {
+    const { email, password, name, role } = req.body || {};
+    if (!email || !password || !name) {
+        return res.status(400).json({ success: false, message: 'email, password and name are required' });
+    }
+
+    try {
+        // 1) Create auth user using service role
+        const { data: created, error: authErr } = await supabase.auth.admin.createUser({
+            email: String(email).toLowerCase().trim(),
+            password: String(password),
+            email_confirm: true,
+            user_metadata: { name }
+        });
+        if (authErr) return res.status(400).json({ success: false, message: authErr.message });
+
+        const authUser = created?.user;
+        if (!authUser) return res.status(500).json({ success: false, message: 'Failed to create auth user' });
+
+        // 2) Upsert into users table
+        const insertPayload = {
+            id: authUser.id,
+            name,
+            email: String(email).toLowerCase().trim(),
+            role: role || 'buyer',
+            password, // NOTE: for demo only; in production remove storing plain password
+        };
+
+        const { data: row, error: upsertErr } = await supabase
+            .from('users')
+            .upsert(insertPayload, { onConflict: 'id' })
+            .select('*')
+            .single();
+        if (upsertErr) return res.status(500).json({ success: false, message: upsertErr.message });
+
+        return res.json({ success: true, message: 'Auth user created', data: row });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+}));
+
 // Update a user
 router.put('/:id', asyncHandler(async (req, res) => {
     try {
