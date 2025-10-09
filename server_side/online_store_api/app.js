@@ -162,14 +162,21 @@ app.get('/paypal-cancel', asyncHandler(async (req, res) => {
 async function setOrderPaid(orderId, provider, txnId) {
   try {
     const { supabase } = require('./config/supabase');
-    const fields = {
-      status: 'paid',
-      payment_status: 'paid',
+    const base = {
       payment_provider: provider || null,
       transaction_id: txnId || null,
       updated_at: new Date().toISOString(),
     };
-    await supabase.from('orders').update(fields).eq('id', orderId);
+    const attempts = [
+      { order_status: 'paid' },
+      { status: 'paid' },
+      { payment_status: 'paid' },
+      { paymentStatus: 'paid' },
+    ];
+    for (const variant of attempts) {
+      const { error } = await supabase.from('orders').update({ ...base, ...variant }).eq('id', orderId);
+      if (!error) break;
+    }
   } catch (_) {}
 }
 
