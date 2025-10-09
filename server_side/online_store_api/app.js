@@ -144,14 +144,52 @@ app.get('/test-users', asyncHandler(async (req, res) => {
 }));
 
 // Minimal pages for PayPal return/cancel (works even for mobile apps)
-app.get('/paypal-success', (req, res) => {
+app.get('/paypal-success', asyncHandler(async (req, res) => {
+  const { order_id: orderId, txn_id: txnId } = req.query || {};
+  if (orderId) {
+    await setOrderPaid(orderId, 'paypal', txnId);
+  }
   res.set('Content-Type', 'text/html');
   res.send('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body><h3>Payment successful</h3><p>You can close this page and return to the app.</p></body></html>');
-});
-app.get('/paypal-cancel', (req, res) => {
+}));
+app.get('/paypal-cancel', asyncHandler(async (req, res) => {
+  // no-op; could mark as canceled if order_id provided
   res.set('Content-Type', 'text/html');
   res.send('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body><h3>Payment cancelled</h3><p>You can close this page and return to the app.</p></body></html>');
-});
+}));
+
+// Update order status helper
+async function setOrderPaid(orderId, provider, txnId) {
+  try {
+    const { supabase } = require('./config/supabase');
+    const fields = {
+      status: 'paid',
+      payment_status: 'paid',
+      payment_provider: provider || null,
+      transaction_id: txnId || null,
+      updated_at: new Date().toISOString(),
+    };
+    await supabase.from('orders').update(fields).eq('id', orderId);
+  } catch (_) {}
+}
+
+// For mobile/web return URLs: optionally pass ?order_id=&txn_id=&provider=paypal
+app.get('/payment/return', asyncHandler(async (req, res) => {
+  const { order_id: orderId, provider = 'paypal', txn_id: txnId } = req.query || {};
+  if (orderId) {
+    await setOrderPaid(orderId, provider, txnId);
+  }
+  res.set('Content-Type', 'text/html');
+  res.send('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body><h3>Payment processed</h3><p>You can close this page and return to the app.</p></body></html>');
+}));
+
+// Generic confirm endpoint the client can call after provider SDK success
+app.post('/payment/confirm', asyncHandler(async (req, res) => {
+  const { orderId, provider, transactionId } = req.body || {};
+  if (!orderId) return res.status(400).json({ success: false, message: 'orderId required' });
+  await setOrderPaid(orderId, provider || 'unknown', transactionId);
+  return res.json({ success: true, message: 'Order marked paid' });
+}));
 
 // Error handler
 app.use((error, req, res, next) => {
