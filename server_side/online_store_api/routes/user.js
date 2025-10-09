@@ -142,6 +142,56 @@ router.post('/create-auth', asyncHandler(async (req, res) => {
     }
 }));
 
+// User requests to become a seller (pending approval)
+router.post('/:id/request-seller', asyncHandler(async (req, res) => {
+    const userID = req.params.id;
+    const { businessName, phone, paypalEmail } = req.body || {};
+    try {
+        const updateData = {
+            seller_request: 'pending',
+            business_name: businessName || null,
+            phone: phone || null,
+            paypal_email: paypalEmail || null,
+            updated_at: new Date().toISOString(),
+        };
+        const user = await User.update(userID, updateData);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        // Optional: notify admins via notifications table if you track admin IDs
+        return res.json({ success: true, message: 'Seller request submitted', data: user });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// Admin approves seller request -> set role to seller and notify user
+router.post('/:id/approve-seller', asyncHandler(async (req, res) => {
+    const userID = req.params.id;
+    try {
+        const user = await User.update(userID, {
+            role: 'seller',
+            seller_request: 'approved',
+            verified: false,
+            updated_at: new Date().toISOString(),
+        });
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Create in-app notification for the user
+        try {
+            await supabase.from('notifications').insert({
+                user_id: userID,
+                title: 'Seller Request Approved',
+                message: 'Your request to become a seller has been approved. You can now start selling.',
+                type: 'seller_approved',
+                is_read: false,
+            });
+        } catch (_) {}
+
+        return res.json({ success: true, message: 'Seller approved', data: user });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
 // Update a user
 router.put('/:id', asyncHandler(async (req, res) => {
     try {
