@@ -42,6 +42,7 @@ router.get('/', asyncHandler(async (req, res) => {
             })),
             totalPrice: Number(o.total_price),
             paymentMethod: o.payment_method,
+            referenceNumber: o.reference_number,
             couponCode: o.coupons ? {
                 _id: o.coupons.id,
                 couponCode: o.coupons.coupon_code,
@@ -117,7 +118,8 @@ router.post('/', asyncHandler(async (req, res) => {
         paymentMethod, 
         couponCode, 
         orderTotal, 
-        trackingUrl 
+        trackingUrl,
+        referenceNumber
     } = req.body;
     
     if (!userID || !items || !totalPrice || !shippingAddress || !paymentMethod || !orderTotal) {
@@ -172,6 +174,7 @@ router.post('/', asyncHandler(async (req, res) => {
             payment_method: paymentMethod,
             coupon_id: couponCode,
             tracking_url: trackingUrl,
+            reference_number: referenceNumber,
             subtotal: orderTotal?.subtotal,
             discount: orderTotal?.discount,
             total: orderTotal?.total

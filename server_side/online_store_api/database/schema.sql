@@ -119,7 +119,7 @@ CREATE TABLE orders (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     order_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    order_status VARCHAR(20) DEFAULT 'pending' CHECK (order_status IN ('pending', 'processing', 'shipped', 'delivered', 'cancelled')),
+    order_status VARCHAR(20) DEFAULT 'pending' CHECK (order_status IN ('pending', 'processing', 'paid', 'shipped', 'delivered', 'cancelled')),
     total_price DECIMAL(10,2) NOT NULL,
     payment_method VARCHAR(20) CHECK (payment_method IN ('cod', 'prepaid')),
     coupon_id UUID REFERENCES coupons(id) ON DELETE SET NULL,
@@ -127,6 +127,7 @@ CREATE TABLE orders (
     discount DECIMAL(10,2),
     total DECIMAL(10,2),
     tracking_url VARCHAR(500),
+    reference_number VARCHAR(100),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
