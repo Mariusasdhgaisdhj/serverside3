@@ -220,25 +220,25 @@ router.post('/:id/upgrade-to-seller', asyncHandler(async (req, res) => {
     if (!businessName || !phone) {
         return res.status(400).json({ success: false, message: 'businessName and phone are required' });
     }
-    
+
     try {
-        // Update user to seller with business information
+        // Treat this as a request requiring admin approval (backwards compatible endpoint)
         const updateData = {
-            role: 'seller',
+            seller_request: 'pending',
             business_name: businessName,
             phone: phone,
             paypal_email: paypalEmail || null,
-            verified: false,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
         };
-        
+
         const user = await User.update(userID, updateData);
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-        
-        res.json({ success: true, message: 'Upgraded to seller', data: user });
+
+        // Optional: notify admins here
+        return res.json({ success: true, message: 'Seller request submitted', data: user });
     } catch (error) {
-        console.error('Error upgrading user to seller:', error);
-        res.status(500).json({ success: false, message: 'Failed to upgrade user to seller' });
+        console.error('Error submitting seller request:', error);
+        res.status(500).json({ success: false, message: 'Failed to submit seller request' });
     }
 }));
 
