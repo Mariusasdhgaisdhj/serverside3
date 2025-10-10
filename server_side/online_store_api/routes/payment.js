@@ -134,7 +134,7 @@ router.post('/paypal/capture-order/:orderId', asyncHandler(async (req, res) => {
 // Create PayMongo payment intent
 router.post('/paymongo/create-intent', asyncHandler(async (req, res) => {
   try {
-    const { amount, currency = 'PHP', metadata = {} } = req.body;
+    const { amount, currency = 'PHP', metadata } = req.body;
     
     if (!amount) {
       return res.status(400).json({ 

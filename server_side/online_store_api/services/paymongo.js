@@ -12,7 +12,7 @@ class PayMongoService {
   }
 
   // Create payment intent for GCash
-  async createPaymentIntent(amount, currency = 'PHP', metadata = {}) {
+  async createPaymentIntent(amount, currency = 'PHP', metadata) {
     try {
       const response = await axios.post(
         `${this.baseURL}/payment_intents`,
@@ -22,8 +22,8 @@ class PayMongoService {
               amount: Math.round(amount * 100), // Convert to centavos
               currency: currency,
               payment_method_allowed: ['gcash'],
-              description: metadata.description || 'AgriGrow Order Payment',
-              metadata: metadata
+              description: (metadata && metadata.description) || 'AgriGrow Order Payment',
+              ...(metadata && Object.keys(metadata).length > 0 ? { metadata } : {})
             }
           }
         },
