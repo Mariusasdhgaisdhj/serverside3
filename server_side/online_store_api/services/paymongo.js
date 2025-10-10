@@ -86,14 +86,15 @@ class PayMongoService {
   }
 
   // Attach payment method to payment intent
-  async attachPaymentMethod(paymentIntentId, paymentMethodId) {
+  async attachPaymentMethod(paymentIntentId, paymentMethodId, returnUrl) {
     try {
       const response = await axios.post(
         `${this.baseURL}/payment_intents/${paymentIntentId}/attach`,
         {
           data: {
             attributes: {
-              payment_method: paymentMethodId
+              payment_method: paymentMethodId,
+              ...(returnUrl ? { return_url: returnUrl } : {})
             }
           }
         },

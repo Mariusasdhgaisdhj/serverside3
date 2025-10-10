@@ -248,7 +248,7 @@ router.post('/paymongo/create-payment-method', asyncHandler(async (req, res) => 
 // Attach payment method to payment intent
 router.post('/paymongo/attach-payment', asyncHandler(async (req, res) => {
   try {
-    const { paymentIntentId, paymentMethodId } = req.body;
+    const { paymentIntentId, paymentMethodId, returnUrl } = req.body;
     
     if (!paymentIntentId || !paymentMethodId) {
       return res.status(400).json({ 
@@ -258,7 +258,7 @@ router.post('/paymongo/attach-payment', asyncHandler(async (req, res) => {
     }
 
     const paymongo = new PayMongoService();
-    const result = await paymongo.attachPaymentMethod(paymentIntentId, paymentMethodId);
+    const result = await paymongo.attachPaymentMethod(paymentIntentId, paymentMethodId, returnUrl || process.env.PAYMONGO_SUCCESS_URL || 'https://serverside3.vercel.app/payment/success');
     
     if (result.success) {
       res.json({
