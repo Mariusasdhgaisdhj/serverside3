@@ -21,10 +21,25 @@ router.get('/', asyncHandler(async (req, res) => {
 
         // If sellerId is provided, keep only orders that include at least one item from this seller
         if (sellerId) {
+            console.log(`Filtering orders for sellerId: ${sellerId}`);
+            console.log(`Total orders before filtering: ${orders.length}`);
+            
             orders = orders.filter((o) => {
                 const items = Array.isArray(o.order_items) ? o.order_items : [];
-                return items.some((it) => it.products && it.products.seller_id === sellerId);
+                console.log(`Order ${o.id} has ${items.length} items`);
+                
+                const hasSellerItems = items.some((it) => {
+                    console.log(`Item product:`, it.products);
+                    console.log(`Item product seller_id: ${it.products?.seller_id}, looking for: ${sellerId}`);
+                    // Check if the product has seller_id and it matches the requested seller
+                    return it.products && it.products.seller_id === sellerId;
+                });
+                
+                console.log(`Order ${o.id} has seller items: ${hasSellerItems}`);
+                return hasSellerItems;
             });
+            
+            console.log(`Total orders after filtering: ${orders.length}`);
         }
 
         // Transform to frontend shape expected by mobile app
