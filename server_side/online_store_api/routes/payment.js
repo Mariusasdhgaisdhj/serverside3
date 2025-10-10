@@ -10,6 +10,7 @@ const axios = require('axios');
 
 // PayMongo Service
 const PayMongoService = require('../services/paymongo');
+const Order = require('../models/order');
 
 function buildPayPalClient() {
   const environment = (process.env.PAYPAL_ENVIRONMENT || 'sandbox').toLowerCase();
@@ -356,16 +357,51 @@ router.post('/paymongo/webhook', asyncHandler(async (req, res) => {
     const event = req.body;
     console.log('PayMongo webhook received:', event.type);
     
+    // Helper: find orderId from common metadata locations
+    const getOrderIdFromEvent = () => {
+      try {
+        const attrs = event?.data?.attributes || {};
+        const metadata = attrs?.metadata || {};
+        return (
+          metadata.orderId ||
+          metadata.order_id ||
+          metadata.order ||
+          null
+        );
+      } catch (_) { return null; }
+    };
+
     // Process different event types
     switch (event.type) {
       case 'payment_intent.succeeded':
-        console.log('Payment succeeded:', event.data.id);
-        // Update order status in database
+      case 'payment.paid': {
+        const orderId = getOrderIdFromEvent();
+        console.log(`Payment success event for orderId: ${orderId}`);
+        if (orderId) {
+          try {
+            const updated = await Order.updateStatus(orderId, 'paid');
+            console.log('Order updated to paid:', updated?.id || orderId);
+          } catch (e) {
+            console.error('Failed to update order status on webhook:', e.message);
+          }
+        } else {
+          console.warn('No orderId found in webhook metadata; skipping order update');
+        }
         break;
-      case 'payment_intent.payment_failed':
-        console.log('Payment failed:', event.data.id);
-        // Handle failed payment
+      }
+      case 'payment_intent.payment_failed': {
+        const orderId = getOrderIdFromEvent();
+        console.log(`Payment failed for orderId: ${orderId}`);
+        if (orderId) {
+          try {
+            await Order.updateStatus(orderId, 'cancelled');
+            console.log('Order marked as cancelled due to failed payment');
+          } catch (e) {
+            console.error('Failed to mark order cancelled on webhook:', e.message);
+          }
+        }
         break;
+      }
       default:
         console.log('Unhandled event type:', event.type);
     }

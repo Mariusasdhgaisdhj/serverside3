@@ -156,8 +156,8 @@ class PayMongoService {
               amount: Math.round(amount * 100), // Convert to centavos
               currency: currency,
               redirect: {
-                success: process.env.PAYMONGO_SUCCESS_URL || 'https://yourapp.com/payment/success',
-                failed: process.env.PAYMONGO_FAILED_URL || 'https://yourapp.com/payment/failed'
+                success: process.env.PAYMONGO_SUCCESS_URL || 'https://serverside3.vercel.app/payment/success',
+                failed: process.env.PAYMONGO_FAILED_URL || 'https://serverside3.vercel.app/payment/failed'
               },
               metadata: metadata
             }
