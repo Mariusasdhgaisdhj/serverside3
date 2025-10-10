@@ -18,6 +18,7 @@ CREATE TABLE users (
     verified BOOLEAN DEFAULT FALSE,
     profilepicture VARCHAR(500),
     addressinfo JSONB,
+    payoutinfo JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
