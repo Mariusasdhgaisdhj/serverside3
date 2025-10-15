@@ -117,8 +117,8 @@ class Conversation {
         .from('conversations')
         .select(`
           *,
-          buyer:buyer_id(name, email),
-          seller:seller_id(name, email)
+          buyer:buyer_id(name, email, business_name, profilepicture),
+          seller:seller_id(name, email, business_name, profilepicture)
         `)
         .eq('id', id)
         .single();
@@ -137,8 +137,8 @@ class Conversation {
         .from('conversations')
         .select(`
           *,
-          buyer:buyer_id(name, email),
-          seller:seller_id(name, email)
+          buyer:buyer_id(name, email, business_name, profilepicture),
+          seller:seller_id(name, email, business_name, profilepicture)
         `)
         .eq('buyer_id', buyerId)
         .eq('seller_id', sellerId)
@@ -161,8 +161,8 @@ class Conversation {
         .from('conversations')
         .select(`
           *,
-          buyer:buyer_id(name, email, business_name),
-          seller:seller_id(name, email, business_name)
+          buyer:buyer_id(name, email, business_name, profilepicture, firstname, lastname),
+          seller:seller_id(name, email, business_name, profilepicture, firstname, lastname)
         `, { count: 'exact' })
         .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
         .range(from, to)

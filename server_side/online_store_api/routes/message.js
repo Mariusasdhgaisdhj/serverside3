@@ -19,14 +19,21 @@ router.get('/conversations/:userId', asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit || '50', 10);
   const { data, total } = await Conversation.findByUserId(userId, page, limit);
 
-  // Attach latest message per conversation for preview
+  // Attach latest message per conversation using descending order for true latest
   const withPreview = [];
   for (const c of (data || [])) {
-    const { data: msgs } = await Message.findByConversationId(c.id, 1, 1); // first page, limit 1 (ascending order in model)
-    const latest = Array.isArray(msgs) && msgs.length > 0 ? msgs[msgs.length - 1] : null;
+    const { data: msgs } = await Message.findByConversationId(c.id, 1, 1); // our model returns ascending; we'll fetch last separately
+    // Instead of relying on ascending, query latest directly
+    const { data: latestArr } = await require('../config/supabase').supabase
+      .from('messages')
+      .select('id, text, created_at, sender_id')
+      .eq('conversation_id', c.id)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const latest = Array.isArray(latestArr) && latestArr.length > 0 ? latestArr[0] : (Array.isArray(msgs) && msgs.length > 0 ? msgs[msgs.length - 1] : null);
     withPreview.push({
       ...c,
-      latestMessage: latest ? { id: latest.id, text: latest.text, created_at: latest.created_at, sender_id: latest.sender_id, sender: latest.users } : null,
+      latestMessage: latest ? { id: latest.id, text: latest.text, created_at: latest.created_at, sender_id: latest.sender_id } : null,
     });
   }
 
