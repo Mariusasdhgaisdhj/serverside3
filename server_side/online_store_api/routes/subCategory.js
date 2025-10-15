@@ -150,9 +150,8 @@
         }
 
         try {
-            const subCategory = new SubCategory({ name, categoryId });
-            const newSubCategory = await subCategory.save();
-            res.json({ success: true, message: "Sub-category created successfully.", data: null });
+            const created = await SubCategory.create({ name, category_id: categoryId });
+            res.json({ success: true, message: "Sub-category created successfully.", data: created });
         } catch (error) {
             res.status(500).json({ success: false, message: error.message });
         }
@@ -162,18 +161,16 @@
     router.put('/:id', asyncHandler(async (req, res) => {
         const subCategoryID = req.params.id;
         const { name, categoryId } = req.body;
-        console.log(req.body)
-        console.log(subCategoryID)
         if (!name || !categoryId) {
             return res.status(400).json({ success: false, message: "Name and category ID are required." });
         }
 
         try {
-            const updatedSubCategory = await SubCategory.findByIdAndUpdate(subCategoryID, { name, categoryId }, { new: true });
-            if (!updatedSubCategory) {
+            const updated = await SubCategory.update(subCategoryID, { name, category_id: categoryId });
+            if (!updated) {
                 return res.status(404).json({ success: false, message: "Sub-category not found." });
             }
-            res.json({ success: true, message: "Sub-category updated successfully.", data: null });
+            res.json({ success: true, message: "Sub-category updated successfully.", data: updated });
         } catch (error) {
             res.status(500).json({ success: false, message: error.message });
         }
