@@ -339,4 +339,60 @@ router.post('/:id/tracking', asyncHandler(async (req, res) => {
     }
 }));
 
+// Cancel order (buyer request)
+router.post('/:id/cancel', asyncHandler(async (req, res) => {
+    try {
+        const orderID = req.params.id;
+        const { userId, reason, cancelledBy } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({ success: false, message: "User ID is required." });
+        }
+        
+        if (!reason) {
+            return res.status(400).json({ success: false, message: "Cancellation reason is required." });
+        }
+
+        // Find the order first
+        const order = await Order.findById(orderID);
+        if (!order) {
+            return res.status(404).json({ success: false, message: "Order not found." });
+        }
+
+        // Verify the user owns this order
+        if (order.userID.toString() !== userId) {
+            return res.status(403).json({ success: false, message: "You can only cancel your own orders." });
+        }
+
+        // Check if order can be cancelled
+        const currentStatus = order.orderStatus?.toLowerCase();
+        const cancellableStatuses = ['pending', 'paid', 'processing'];
+        
+        if (!cancellableStatuses.includes(currentStatus)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: `Order cannot be cancelled. Current status: ${currentStatus}. Orders can only be cancelled when status is pending, paid, or processing.` 
+            });
+        }
+
+        // Update order status to cancelled
+        const updatedOrder = await Order.updateStatus(orderID, 'cancelled');
+        
+        if (!updatedOrder) {
+            return res.status(500).json({ success: false, message: "Failed to cancel order." });
+        }
+
+        // Log the cancellation for audit purposes
+        console.log(`Order ${orderID} cancelled by ${cancelledBy || 'buyer'}. Reason: ${reason}`);
+
+        res.json({ 
+            success: true, 
+            message: "Order cancelled successfully.", 
+            data: updatedOrder 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
 module.exports = router;
