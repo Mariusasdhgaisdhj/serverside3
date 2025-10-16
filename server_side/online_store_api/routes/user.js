@@ -26,6 +26,7 @@ router.get('/sellers', asyncHandler(async (req, res) => {
         const { data: sellers, total } = await User.findByRole('seller', 1, 1000); // Get up to 1000 sellers
         
         console.log('Raw sellers from database:', JSON.stringify(sellers, null, 2));
+        console.log('Total sellers found:', sellers.length);
         
         // Check if sellers have latitude/longitude in addressinfo or direct fields
         const sellersWithLocation = sellers.filter(seller => {
@@ -83,6 +84,48 @@ router.get('/sellers', asyncHandler(async (req, res) => {
             success: false, 
             message: "Failed to fetch sellers. Please check your database connection.",
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+}));
+
+// Debug endpoint to check all users and their roles
+router.get('/debug-all-users', asyncHandler(async (req, res) => {
+    try {
+        const { data: allUsers } = await User.findAll(1, 1000);
+        
+        const usersByRole = {
+            buyer: allUsers.filter(u => u.role === 'buyer'),
+            seller: allUsers.filter(u => u.role === 'seller'),
+            admin: allUsers.filter(u => u.role === 'admin')
+        };
+        
+        res.json({
+            success: true,
+            message: "All users retrieved successfully",
+            data: {
+                total: allUsers.length,
+                byRole: {
+                    buyers: usersByRole.buyer.length,
+                    sellers: usersByRole.seller.length,
+                    admins: usersByRole.admin.length
+                },
+                sellers: usersByRole.seller.map(seller => ({
+                    id: seller.id,
+                    name: seller.name,
+                    email: seller.email,
+                    business_name: seller.business_name,
+                    latitude: seller.latitude,
+                    longitude: seller.longitude,
+                    addressinfo: seller.addressinfo
+                }))
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching all users:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch users",
+            error: error.message
         });
     }
 }));
@@ -197,6 +240,129 @@ router.post('/create-sample-sellers', asyncHandler(async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: "Failed to create sample sellers.",
+            error: error.message
+        });
+    }
+}));
+
+// Quick test seller creation (development only)
+router.post('/create-test-seller', asyncHandler(async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ success: false, message: 'Not available in production' });
+    }
+
+    try {
+        const testSeller = {
+            name: 'Test Seller',
+            email: 'testseller@example.com',
+            password: 'password123',
+            role: 'seller',
+            business_name: 'Test Farm',
+            latitude: 7.1907,
+            longitude: 125.4553,
+            phone: '+63 912 345 6789',
+            addressinfo: {
+                address: 'Davao City, Philippines',
+                latitude: 7.1907,
+                longitude: 125.4553,
+                products: ['Rice', 'Vegetables']
+            }
+        };
+
+        const seller = await User.create(testSeller);
+        
+        res.json({ 
+            success: true, 
+            message: "Test seller created successfully", 
+            data: seller 
+        });
+    } catch (error) {
+        console.error('Error creating test seller:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to create test seller.",
+            error: error.message
+        });
+    }
+}));
+
+// Update existing sellers with location data (development only)
+router.post('/populate-seller-locations', asyncHandler(async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ success: false, message: 'Not available in production' });
+    }
+
+    try {
+        // Get all existing sellers
+        const { data: sellers } = await User.findByRole('seller', 1, 1000);
+        
+        if (sellers.length === 0) {
+            return res.json({ 
+                success: true, 
+                message: "No sellers found to update" 
+            });
+        }
+
+        // Sample locations in Mindanao
+        const mindanaoLocations = [
+            { lat: 7.1907, lng: 125.4553, city: 'Davao City' },
+            { lat: 8.4542, lng: 124.6319, city: 'Cagayan de Oro' },
+            { lat: 6.9214, lng: 122.0790, city: 'Zamboanga City' },
+            { lat: 6.1167, lng: 125.1667, city: 'General Santos City' },
+            { lat: 7.2167, lng: 124.2500, city: 'Cotabato City' },
+            { lat: 7.5000, lng: 125.7500, city: 'Tagum City' },
+            { lat: 6.7500, lng: 125.3500, city: 'Digos City' },
+            { lat: 8.2500, lng: 124.4000, city: 'Iligan City' }
+        ];
+
+        const updatedSellers = [];
+        
+        for (let i = 0; i < sellers.length; i++) {
+            const seller = sellers[i];
+            const location = mindanaoLocations[i % mindanaoLocations.length];
+            
+            // Update seller with location data
+            const { data: updatedSeller, error } = await supabase
+                .from('users')
+                .update({
+                    latitude: location.lat,
+                    longitude: location.lng,
+                    addressinfo: {
+                        ...seller.addressinfo,
+                        address: `${location.city}, Philippines`,
+                        latitude: location.lat,
+                        longitude: location.lng,
+                        products: seller.addressinfo?.products || ['Agricultural Products']
+                    }
+                })
+                .eq('id', seller.id)
+                .select()
+                .single();
+            
+            if (error) {
+                console.error(`Error updating seller ${seller.id}:`, error);
+            } else {
+                updatedSellers.push({
+                    id: updatedSeller.id,
+                    name: updatedSeller.name,
+                    business_name: updatedSeller.business_name,
+                    latitude: updatedSeller.latitude,
+                    longitude: updatedSeller.longitude,
+                    city: location.city
+                });
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            message: `Updated ${updatedSellers.length} sellers with location data`, 
+            data: updatedSellers 
+        });
+    } catch (error) {
+        console.error('Error populating seller locations:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to populate seller locations.",
             error: error.message
         });
     }
