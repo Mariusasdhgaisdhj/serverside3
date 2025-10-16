@@ -94,7 +94,7 @@ router.post('/:conversationId/messages', asyncHandler(async (req, res) => {
           contents: { en: preview || 'Message' },
           headings: { en: senderName },
           large_icon: senderAvatar || undefined,
-          big_picture: senderAvatar || undefined,
+          
           data: { type: 'chat_message', conversationId, senderId, messageId: msg.id },
         });
         console.log('[push] onesignal response id:', resp?.body?.id || 'n/a');
