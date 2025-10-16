@@ -25,24 +25,57 @@ router.get('/sellers', asyncHandler(async (req, res) => {
     try {
         const { data: sellers, total } = await User.findByRole('seller', 1, 1000); // Get up to 1000 sellers
         
-        // Filter sellers with valid coordinates and add additional fields
+        console.log('Raw sellers from database:', JSON.stringify(sellers, null, 2));
+        
+        // Check if sellers have latitude/longitude in addressinfo or direct fields
         const sellersWithLocation = sellers.filter(seller => {
-            const lat = parseFloat(seller.latitude);
-            const lng = parseFloat(seller.longitude);
+            // Check for direct latitude/longitude fields
+            let lat = parseFloat(seller.latitude);
+            let lng = parseFloat(seller.longitude);
+            
+            // If not found in direct fields, check addressinfo JSONB
+            if (isNaN(lat) || isNaN(lng)) {
+                if (seller.addressinfo && typeof seller.addressinfo === 'object') {
+                    lat = parseFloat(seller.addressinfo.latitude);
+                    lng = parseFloat(seller.addressinfo.longitude);
+                }
+            }
+            
             return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
-        }).map(seller => ({
-            ...seller,
-            // Ensure we have the fields expected by the frontend
-            businessName: seller.business_name || seller.businessName || seller.name,
-            products: seller.products || [],
-            imageUrl: seller.profile_image || seller.imageUrl || null,
-        }));
+        }).map(seller => {
+            // Extract coordinates from either direct fields or addressinfo
+            let lat = parseFloat(seller.latitude);
+            let lng = parseFloat(seller.longitude);
+            
+            if (isNaN(lat) || isNaN(lng)) {
+                if (seller.addressinfo && typeof seller.addressinfo === 'object') {
+                    lat = parseFloat(seller.addressinfo.latitude);
+                    lng = parseFloat(seller.addressinfo.longitude);
+                }
+            }
+            
+            return {
+                ...seller,
+                latitude: lat,
+                longitude: lng,
+                // Ensure we have the fields expected by the frontend
+                businessName: seller.business_name || seller.businessName || seller.name,
+                products: seller.products || [],
+                imageUrl: seller.profile_image || seller.imageUrl || null,
+            };
+        });
+
+        console.log('Filtered sellers with location:', JSON.stringify(sellersWithLocation, null, 2));
 
         res.json({ 
             success: true, 
             message: "Sellers retrieved successfully.", 
             data: sellersWithLocation,
-            total: sellersWithLocation.length
+            total: sellersWithLocation.length,
+            debug: {
+                totalSellers: sellers.length,
+                sellersWithLocation: sellersWithLocation.length
+            }
         });
     } catch (error) {
         console.error('Error fetching sellers:', error);
@@ -65,62 +98,82 @@ router.post('/create-sample-sellers', asyncHandler(async (req, res) => {
             {
                 name: 'Juan Dela Cruz',
                 email: 'juan@example.com',
+                password: 'password123',
                 role: 'seller',
                 business_name: 'Davao Organic Farm',
                 latitude: 7.1907,
                 longitude: 125.4553,
-                address: 'Davao City, Philippines',
                 phone: '+63 912 345 6789',
-                products: ['Rice', 'Vegetables', 'Fruits'],
-                profile_image: null
+                addressinfo: {
+                    address: 'Davao City, Philippines',
+                    latitude: 7.1907,
+                    longitude: 125.4553,
+                    products: ['Rice', 'Vegetables', 'Fruits']
+                }
             },
             {
                 name: 'Maria Santos',
                 email: 'maria@example.com',
+                password: 'password123',
                 role: 'seller',
                 business_name: 'Cagayan Valley Produce',
                 latitude: 8.4542,
                 longitude: 124.6319,
-                address: 'Cagayan de Oro, Philippines',
                 phone: '+63 917 123 4567',
-                products: ['Corn', 'Bananas', 'Coconut'],
-                profile_image: null
+                addressinfo: {
+                    address: 'Cagayan de Oro, Philippines',
+                    latitude: 8.4542,
+                    longitude: 124.6319,
+                    products: ['Corn', 'Bananas', 'Coconut']
+                }
             },
             {
                 name: 'Pedro Garcia',
                 email: 'pedro@example.com',
+                password: 'password123',
                 role: 'seller',
                 business_name: 'Zamboanga Farm Supply',
                 latitude: 6.9214,
                 longitude: 122.0790,
-                address: 'Zamboanga City, Philippines',
                 phone: '+63 918 987 6543',
-                products: ['Seeds', 'Fertilizers', 'Tools'],
-                profile_image: null
+                addressinfo: {
+                    address: 'Zamboanga City, Philippines',
+                    latitude: 6.9214,
+                    longitude: 122.0790,
+                    products: ['Seeds', 'Fertilizers', 'Tools']
+                }
             },
             {
                 name: 'Ana Rodriguez',
                 email: 'ana@example.com',
+                password: 'password123',
                 role: 'seller',
                 business_name: 'General Santos Fish Market',
                 latitude: 6.1167,
                 longitude: 125.1667,
-                address: 'General Santos City, Philippines',
                 phone: '+63 919 456 7890',
-                products: ['Fish', 'Seafood', 'Aquaculture'],
-                profile_image: null
+                addressinfo: {
+                    address: 'General Santos City, Philippines',
+                    latitude: 6.1167,
+                    longitude: 125.1667,
+                    products: ['Fish', 'Seafood', 'Aquaculture']
+                }
             },
             {
                 name: 'Carlos Mendoza',
                 email: 'carlos@example.com',
+                password: 'password123',
                 role: 'seller',
                 business_name: 'Cotabato Rice Mill',
                 latitude: 7.2167,
                 longitude: 124.2500,
-                address: 'Cotabato City, Philippines',
                 phone: '+63 920 111 2222',
-                products: ['Rice', 'Grains', 'Milling Services'],
-                profile_image: null
+                addressinfo: {
+                    address: 'Cotabato City, Philippines',
+                    latitude: 7.2167,
+                    longitude: 124.2500,
+                    products: ['Rice', 'Grains', 'Milling Services']
+                }
             }
         ];
 
@@ -144,6 +197,36 @@ router.post('/create-sample-sellers', asyncHandler(async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: "Failed to create sample sellers.",
+            error: error.message
+        });
+    }
+}));
+
+// Run location migration (development only)
+router.post('/migrate-location', asyncHandler(async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ success: false, message: 'Not available in production' });
+    }
+
+    try {
+        // Add latitude and longitude columns
+        await supabase.rpc('exec_sql', {
+            sql: `
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS latitude DECIMAL(10, 8);
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS longitude DECIMAL(11, 8);
+                CREATE INDEX IF NOT EXISTS idx_users_location ON users(latitude, longitude);
+            `
+        });
+
+        res.json({ 
+            success: true, 
+            message: "Location columns added successfully" 
+        });
+    } catch (error) {
+        console.error('Error running location migration:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to run location migration.",
             error: error.message
         });
     }
