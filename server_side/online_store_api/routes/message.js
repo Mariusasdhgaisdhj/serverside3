@@ -4,6 +4,7 @@ const router = express.Router();
 const { Conversation, Message } = require('../models/message');
 const Order = require('../models/order');
 const OneSignal = require('onesignal-node');
+const User = require('../models/user');
 const dotenv = require('dotenv');
 dotenv.config();
 
@@ -75,13 +76,25 @@ router.post('/:conversationId/messages', asyncHandler(async (req, res) => {
         const isSenderBuyer = String(convo.buyer_id) === String(senderId);
         const recipientId = String(isSenderBuyer ? convo.seller_id : convo.buyer_id);
         const client = new OneSignal.Client(appId, apiKey);
+        // Fetch sender to personalize title/icon
+        let senderName = 'New message';
+        let senderAvatar = null;
+        try {
+          const u = await User.findById(senderId);
+          if (u) {
+            senderName = u.name || u.username || 'New message';
+            senderAvatar = u.profilepicture || null;
+          }
+        } catch (_) {}
         const preview = String(text).length > 120 ? String(text).slice(0, 117) + '...' : String(text);
         console.log('[push] convo', conversationId, 'sender', senderId, '-> recipient', recipientId);
         const resp = await client.createNotification({
           app_id: appId,
           include_external_user_ids: [recipientId],
-          contents: { en: preview || 'New message' },
-          headings: { en: 'New message' },
+          contents: { en: preview || 'Message' },
+          headings: { en: senderName },
+          large_icon: senderAvatar || undefined,
+          big_picture: senderAvatar || undefined,
           data: { type: 'chat_message', conversationId, senderId, messageId: msg.id },
         });
         console.log('[push] onesignal response id:', resp?.body?.id || 'n/a');
