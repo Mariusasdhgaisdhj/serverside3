@@ -82,7 +82,7 @@ router.post('/:conversationId/messages', asyncHandler(async (req, res) => {
         try {
           const u = await User.findById(senderId);
           if (u) {
-            senderName = u.name || u.username || 'New message';
+            senderName = u.firstame + u.lastname || u.business_name || 'New message';
             senderAvatar = u.profilepicture || null;
           }
         } catch (_) {}
