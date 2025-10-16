@@ -462,3 +462,48 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 }));
 
 module.exports = router;
+
+// ============ BULK ENDPOINTS ============
+// Accept CSV rows and optional zipped images is overkill here; instead support URL-based images per row
+// POST /products/bulk { items: [{ sellerId,name,description,price,quantity,proCategoryId,proSubCategoryId,imageUrls:[] }, ...] }
+router.post('/bulk', asyncHandler(async (req, res) => {
+  try {
+    const { items } = req.body || {};
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'items[] required' });
+    }
+    const results = [];
+    for (const row of items) {
+      try {
+        const { sellerId, name, description, price, quantity, proCategoryId, proSubCategoryId, imageUrls } = row || {};
+        if (!sellerId || !name || !price || !quantity || !proCategoryId || !proSubCategoryId) {
+          results.push({ ok: false, message: 'missing required field(s)', name });
+          continue;
+        }
+        const saved = await Product.create({
+          seller_id: sellerId,
+          name: String(name).trim(),
+          description: description ? String(description).trim() : '',
+          price: parseFloat(price) || 0,
+          quantity: parseInt(quantity) || 0,
+          pro_category_id: proCategoryId,
+          pro_sub_category_id: proSubCategoryId,
+        });
+        // Handle image URLs (public)
+        const images = Array.isArray(imageUrls) ? imageUrls.filter(Boolean) : [];
+        if (images.length > 0) {
+          const rows = images.slice(0, 5).map((url, idx) => ({ product_id: saved.id, image_order: idx + 1, url }));
+          const { error: imgErr } = await supabase.from('product_images').insert(rows);
+          if (imgErr) console.error('bulk image insert error:', imgErr);
+        }
+        results.push({ ok: true, id: saved.id, name: saved.name });
+      } catch (e) {
+        console.error('bulk row error:', e);
+        results.push({ ok: false, message: e.message });
+      }
+    }
+    res.json({ success: true, message: 'Bulk processed', results });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+}));
