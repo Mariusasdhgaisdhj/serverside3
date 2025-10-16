@@ -20,6 +20,135 @@ router.get('/', asyncHandler(async (req, res) => {
     }
 }));
 
+// Get all sellers (for map display)
+router.get('/sellers', asyncHandler(async (req, res) => {
+    try {
+        const { data: sellers, total } = await User.findByRole('seller', 1, 1000); // Get up to 1000 sellers
+        
+        // Filter sellers with valid coordinates and add additional fields
+        const sellersWithLocation = sellers.filter(seller => {
+            const lat = parseFloat(seller.latitude);
+            const lng = parseFloat(seller.longitude);
+            return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+        }).map(seller => ({
+            ...seller,
+            // Ensure we have the fields expected by the frontend
+            businessName: seller.business_name || seller.businessName || seller.name,
+            products: seller.products || [],
+            imageUrl: seller.profile_image || seller.imageUrl || null,
+        }));
+
+        res.json({ 
+            success: true, 
+            message: "Sellers retrieved successfully.", 
+            data: sellersWithLocation,
+            total: sellersWithLocation.length
+        });
+    } catch (error) {
+        console.error('Error fetching sellers:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch sellers. Please check your database connection.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+}));
+
+// Create sample sellers for testing (development only)
+router.post('/create-sample-sellers', asyncHandler(async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ success: false, message: 'Not available in production' });
+    }
+
+    try {
+        const sampleSellers = [
+            {
+                name: 'Juan Dela Cruz',
+                email: 'juan@example.com',
+                role: 'seller',
+                business_name: 'Davao Organic Farm',
+                latitude: 7.1907,
+                longitude: 125.4553,
+                address: 'Davao City, Philippines',
+                phone: '+63 912 345 6789',
+                products: ['Rice', 'Vegetables', 'Fruits'],
+                profile_image: null
+            },
+            {
+                name: 'Maria Santos',
+                email: 'maria@example.com',
+                role: 'seller',
+                business_name: 'Cagayan Valley Produce',
+                latitude: 8.4542,
+                longitude: 124.6319,
+                address: 'Cagayan de Oro, Philippines',
+                phone: '+63 917 123 4567',
+                products: ['Corn', 'Bananas', 'Coconut'],
+                profile_image: null
+            },
+            {
+                name: 'Pedro Garcia',
+                email: 'pedro@example.com',
+                role: 'seller',
+                business_name: 'Zamboanga Farm Supply',
+                latitude: 6.9214,
+                longitude: 122.0790,
+                address: 'Zamboanga City, Philippines',
+                phone: '+63 918 987 6543',
+                products: ['Seeds', 'Fertilizers', 'Tools'],
+                profile_image: null
+            },
+            {
+                name: 'Ana Rodriguez',
+                email: 'ana@example.com',
+                role: 'seller',
+                business_name: 'General Santos Fish Market',
+                latitude: 6.1167,
+                longitude: 125.1667,
+                address: 'General Santos City, Philippines',
+                phone: '+63 919 456 7890',
+                products: ['Fish', 'Seafood', 'Aquaculture'],
+                profile_image: null
+            },
+            {
+                name: 'Carlos Mendoza',
+                email: 'carlos@example.com',
+                role: 'seller',
+                business_name: 'Cotabato Rice Mill',
+                latitude: 7.2167,
+                longitude: 124.2500,
+                address: 'Cotabato City, Philippines',
+                phone: '+63 920 111 2222',
+                products: ['Rice', 'Grains', 'Milling Services'],
+                profile_image: null
+            }
+        ];
+
+        const createdSellers = [];
+        for (const sellerData of sampleSellers) {
+            try {
+                const seller = await User.create(sellerData);
+                createdSellers.push(seller);
+            } catch (error) {
+                console.log(`Failed to create seller ${sellerData.name}: ${error.message}`);
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            message: `Created ${createdSellers.length} sample sellers`, 
+            data: createdSellers 
+        });
+    } catch (error) {
+        console.error('Error creating sample sellers:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to create sample sellers.",
+            error: error.message
+        });
+    }
+}));
+
 // Search users by name (email)
 router.get('/search', asyncHandler(async (req, res) => {
     const { name } = req.query;
