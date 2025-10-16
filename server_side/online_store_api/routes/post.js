@@ -1,6 +1,8 @@
 const express = require('express');
 const asyncHandler = require('express-async-handler');
 const router = express.Router();
+const multer = require('multer');
+const { uploadPosters } = require('../uploadFile');
 const { Post, Comment } = require('../models/post');
 const User = require('../models/user');
 const { supabase } = require('../config/supabase');
@@ -34,6 +36,15 @@ router.get('/', asyncHandler(async (req, res) => {
 // create post
 router.post('/', asyncHandler(async (req, res) => {
   try {
+    // Support optional image via multipart (field: img)
+    await new Promise((resolve, reject) => {
+      uploadPosters.single('img')(req, res, (err) => {
+        if (err instanceof multer.MulterError) return reject(err);
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+
     const { userId, title, content } = req.body || {};
     
     // Validate required fields
@@ -69,13 +80,20 @@ router.post('/', asyncHandler(async (req, res) => {
     }
     
     const { category, tags } = req.body || {};
+    let imageUrl = null;
+    if (req.file) {
+      imageUrl = `http://localhost:3000/image/poster/${req.file.filename}`;
+    } else if (req.body.imageUrl) {
+      imageUrl = String(req.body.imageUrl);
+    }
     
     const post = await Post.create({ 
       user_id: userId, // Use user_id for Supabase
       title: title.trim(), 
       content: content.trim(),
       category: category || 'General',
-      tags: tags || []
+      tags: tags || [],
+      image_url: imageUrl
     });
     
     res.json({ 
