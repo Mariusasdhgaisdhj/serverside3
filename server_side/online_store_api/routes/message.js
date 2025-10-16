@@ -72,21 +72,24 @@ router.post('/:conversationId/messages', asyncHandler(async (req, res) => {
     if (appId && apiKey) {
       const convo = await Conversation.findById(conversationId);
       if (convo) {
-        const recipientId = String(convo.buyer_id === senderId ? convo.seller_id : convo.buyer_id);
+        const isSenderBuyer = String(convo.buyer_id) === String(senderId);
+        const recipientId = String(isSenderBuyer ? convo.seller_id : convo.buyer_id);
         const client = new OneSignal.Client(appId, apiKey);
         const preview = String(text).length > 120 ? String(text).slice(0, 117) + '...' : String(text);
-        await client.createNotification({
+        console.log('[push] convo', conversationId, 'sender', senderId, '-> recipient', recipientId);
+        const resp = await client.createNotification({
           app_id: appId,
           include_external_user_ids: [recipientId],
           contents: { en: preview || 'New message' },
           headings: { en: 'New message' },
           data: { type: 'chat_message', conversationId, senderId, messageId: msg.id },
         });
+        console.log('[push] onesignal response id:', resp?.body?.id || 'n/a');
       }
     }
   } catch (e) {
     // log and continue; do not fail the message send
-    console.warn('OneSignal push failed for message:', e?.message || e);
+    console.warn('[push] OneSignal push failed for message:', e?.message || e);
   }
 
   res.json({ success: true, message: 'Message sent', data: msg });
