@@ -3,6 +3,9 @@ const asyncHandler = require('express-async-handler');
 const router = express.Router();
 const { Conversation, Message } = require('../models/message');
 const Order = require('../models/order');
+const OneSignal = require('onesignal-node');
+const dotenv = require('dotenv');
+dotenv.config();
 
 // Create or get conversation between buyer and seller
 router.post('/conversation', asyncHandler(async (req, res) => {
@@ -61,6 +64,31 @@ router.post('/:conversationId/messages', asyncHandler(async (req, res) => {
   const { senderId, text } = req.body || {};
   if (!senderId || !text) return res.status(400).json({ success: false, message: 'senderId and text required' });
   const msg = await Message.create({ conversation_id: conversationId, sender_id: senderId, text });
+
+  // Fire OneSignal push to the recipient, if server is configured
+  try {
+    const appId = process.env.ONE_SIGNAL_APP_ID;
+    const apiKey = process.env.ONE_SIGNAL_REST_API_KEY;
+    if (appId && apiKey) {
+      const convo = await Conversation.findById(conversationId);
+      if (convo) {
+        const recipientId = String(convo.buyer_id === senderId ? convo.seller_id : convo.buyer_id);
+        const client = new OneSignal.Client(appId, apiKey);
+        const preview = String(text).length > 120 ? String(text).slice(0, 117) + '...' : String(text);
+        await client.createNotification({
+          app_id: appId,
+          include_external_user_ids: [recipientId],
+          contents: { en: preview || 'New message' },
+          headings: { en: 'New message' },
+          data: { type: 'chat_message', conversationId, senderId, messageId: msg.id },
+        });
+      }
+    }
+  } catch (e) {
+    // log and continue; do not fail the message send
+    console.warn('OneSignal push failed for message:', e?.message || e);
+  }
+
   res.json({ success: true, message: 'Message sent', data: msg });
 }));
 
