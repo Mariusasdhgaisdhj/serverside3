@@ -398,6 +398,117 @@ router.post('/migrate-location', asyncHandler(async (req, res) => {
     }
 }));
 
+// Get all users with location data (for map display - includes all roles)
+router.get('/with-location', asyncHandler(async (req, res) => {
+    try {
+        const { data: users, total } = await User.findAll(1, 1000);
+        
+        console.log('All users from database:', JSON.stringify(users, null, 2));
+        console.log('Total users found:', users.length);
+        
+        // Filter users with valid coordinates
+        const usersWithLocation = users.filter(user => {
+            // Check for direct latitude/longitude fields
+            let lat = parseFloat(user.latitude);
+            let lng = parseFloat(user.longitude);
+            
+            // If not found in direct fields, check addressinfo JSONB
+            if (isNaN(lat) || isNaN(lng)) {
+                if (user.addressinfo && typeof user.addressinfo === 'object') {
+                    lat = parseFloat(user.addressinfo.latitude);
+                    lng = parseFloat(user.addressinfo.longitude);
+                }
+            }
+            
+            return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+        }).map(user => {
+            // Extract coordinates from either direct fields or addressinfo
+            let lat = parseFloat(user.latitude);
+            let lng = parseFloat(user.longitude);
+            
+            if (isNaN(lat) || isNaN(lng)) {
+                if (user.addressinfo && typeof user.addressinfo === 'object') {
+                    lat = parseFloat(user.addressinfo.latitude);
+                    lng = parseFloat(user.addressinfo.longitude);
+                }
+            }
+            
+            return {
+                ...user,
+                latitude: lat,
+                longitude: lng,
+                // Ensure we have the fields expected by the frontend
+                businessName: user.business_name || user.businessName || user.name,
+                products: user.addressinfo?.products || [],
+                imageUrl: user.profile_image || user.imageUrl || null,
+            };
+        });
+
+        console.log('Users with location:', JSON.stringify(usersWithLocation, null, 2));
+
+        res.json({ 
+            success: true, 
+            message: "Users with location retrieved successfully.", 
+            data: usersWithLocation,
+            total: usersWithLocation.length,
+            debug: {
+                totalUsers: users.length,
+                usersWithLocation: usersWithLocation.length
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching users with location:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch users with location.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+}));
+
+// Debug endpoint to check a specific user's data
+router.get('/debug-user/:userId', asyncHandler(async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        
+        const { data: user, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .single();
+        
+        if (error) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+                error: error.message
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: "User data retrieved successfully",
+            data: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                latitude: user.latitude,
+                longitude: user.longitude,
+                addressinfo: user.addressinfo,
+                business_name: user.business_name
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching user data:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch user data",
+            error: error.message
+        });
+    }
+}));
+
 // Search users by name (email)
 router.get('/search', asyncHandler(async (req, res) => {
     const { name } = req.query;
