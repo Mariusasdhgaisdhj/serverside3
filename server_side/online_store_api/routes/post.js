@@ -182,6 +182,33 @@ router.post('/:postId/comments', asyncHandler(async (req, res) => {
       content: content.trim() 
     });
     
+    // Send push notification to post author (if not commenting on own post)
+    if (post.user_id !== userId) {
+      try {
+        // Get commenter's name for the notification
+        const commenter = await User.findById(userId);
+        const commenterName = commenter?.name || 'Someone';
+        
+        // Send notification via HTTP request to notification service
+        const fetch = require('node-fetch');
+        await fetch(`${process.env.BASE_URL || 'http://localhost:3000'}/notifications/comment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'comment',
+            post_id: postId,
+            post_title: post.title,
+            commenter_id: userId,
+            post_author_id: post.user_id,
+            message: `${commenterName} commented on your post: "${post.title}"`,
+          })
+        });
+      } catch (notifError) {
+        console.log('Failed to send comment notification:', notifError);
+        // Don't fail the comment creation if notification fails
+      }
+    }
+    
     res.json({ 
       success: true, 
       message: 'Comment added successfully', 

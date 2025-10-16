@@ -72,5 +72,46 @@ router.delete('/delete-notification/:id', asyncHandler(async (req, res) => {
     }
 }));
 
+// Send comment notification to specific user
+router.post('/comment', asyncHandler(async (req, res) => {
+    try {
+        const { type, post_id, post_title, commenter_id, post_author_id, message } = req.body;
+        
+        // Get the post author's OneSignal player ID (you'll need to store this when users register)
+        // For now, we'll send to all users - you can refine this to target specific users
+        const notificationBody = {
+            contents: {
+                'en': message
+            },
+            headings: {
+                'en': 'New Comment'
+            },
+            included_segments: ['All'], // Change this to target specific user when you have their player ID
+            data: {
+                type: type,
+                post_id: post_id,
+                post_title: post_title,
+                commenter_id: commenter_id,
+                post_author_id: post_author_id
+            }
+        };
+
+        const response = await client.createNotification(notificationBody);
+        console.log('Comment notification sent:', response.body.id);
+        
+        res.json({ 
+            success: true, 
+            message: 'Comment notification sent successfully', 
+            data: { notificationId: response.body.id }
+        });
+    } catch (error) {
+        console.error('Error sending comment notification:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Failed to send comment notification',
+            error: error.message
+        });
+    }
+}));
 
 module.exports = router;
