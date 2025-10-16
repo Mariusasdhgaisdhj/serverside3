@@ -44,6 +44,33 @@ router.get('/conversations/:userId', asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Conversations fetched', data: withPreview, total, page, limit });
 }));
 
+// Alias: support query param style /conversations?userId=...
+router.get('/conversations', asyncHandler(async (req, res) => {
+  const userId = req.query.userId;
+  if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
+  const page = parseInt(req.query.page || '1', 10);
+  const limit = parseInt(req.query.limit || '50', 10);
+  const { data, total } = await Conversation.findByUserId(String(userId), page, limit);
+
+  const withPreview = [];
+  for (const c of (data || [])) {
+    const { data: msgs } = await Message.findByConversationId(c.id, 1, 1);
+    const { data: latestArr } = await require('../config/supabase').supabase
+      .from('messages')
+      .select('id, text, created_at, sender_id')
+      .eq('conversation_id', c.id)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const latest = Array.isArray(latestArr) && latestArr.length > 0 ? latestArr[0] : (Array.isArray(msgs) && msgs.length > 0 ? msgs[msgs.length - 1] : null);
+    withPreview.push({
+      ...c,
+      latestMessage: latest ? { id: latest.id, text: latest.text, created_at: latest.created_at, sender_id: latest.sender_id } : null,
+    });
+  }
+
+  res.json({ success: true, message: 'Conversations fetched', data: withPreview, total, page, limit });
+}));
+
 // Get conversation details by ID (buyer and seller info)
 router.get('/conversation/:id', asyncHandler(async (req, res) => {
   const convo = await Conversation.findById(req.params.id);
