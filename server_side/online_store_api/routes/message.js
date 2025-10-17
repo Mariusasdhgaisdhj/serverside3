@@ -7,6 +7,11 @@ const OneSignal = require('onesignal-node');
 const User = require('../models/user');
 const dotenv = require('dotenv');
 dotenv.config();
+const multer = require('multer');
+const uploadMemory = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+});
 
 // Create or get conversation between buyer and seller
 router.post('/conversation', asyncHandler(async (req, res) => {
@@ -141,18 +146,18 @@ router.post('/:conversationId/messages', asyncHandler(async (req, res) => {
 }));
 
 // Upload image attachment for a conversation and return a public URL
-router.post('/:conversationId/attachments', asyncHandler(async (req, res) => {
+router.post('/:conversationId/attachments', uploadMemory.single('img'), asyncHandler(async (req, res) => {
   try {
     const { conversationId } = req.params;
     if (!conversationId) return res.status(400).json({ success: false, message: 'conversationId required' });
 
-    const file = (req.files && (req.files.img || req.files.file)) || null;
-    if (!file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+    const file = req.file; // provided by multer
+    if (!file) return res.status(400).json({ success: false, message: 'No file uploaded (field name img)' });
 
     const { supabase } = require('../config/supabase');
-    const safeName = `${Date.now()}_${Math.floor(Math.random()*1000)}_${(file.name || file.originalname || 'image').replace(/\s+/g, '_')}`;
+    const safeName = `${Date.now()}_${Math.floor(Math.random()*1000)}_${(file.originalname || 'image').replace(/\s+/g, '_')}`;
     const storagePath = `chat/${conversationId}/${safeName}`;
-    const buffer = file.data || file.buffer;
+    const buffer = file.buffer;
     const contentType = file.mimetype || 'image/jpeg';
 
     const { error: uploadError } = await supabase
