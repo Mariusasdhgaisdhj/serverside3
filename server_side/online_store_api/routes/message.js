@@ -131,6 +131,12 @@ router.post('/:conversationId/messages', asyncHandler(async (req, res) => {
           contents: { en: preview || 'Message' },
           headings: { en: senderName },
           large_icon: senderAvatar || undefined,
+          // Ensure notification makes sound
+          android_sound: 'default',
+          ios_sound: 'default',
+          priority: 10,
+          // If you created a custom Android channel with sound, set its ID via env
+          android_channel_id: process.env.ONE_SIGNAL_ANDROID_CHANNEL_ID || undefined,
           
           data: { type: 'chat_message', conversationId, senderId, messageId: msg.id },
         });
