@@ -138,7 +138,13 @@ router.post('/:conversationId/messages', asyncHandler(async (req, res) => {
           // If you created a custom Android channel with sound, set its ID via env
           android_channel_id: process.env.ONE_SIGNAL_ANDROID_CHANNEL_ID || undefined,
           
-          data: { type: 'chat_message', conversationId, senderId, messageId: msg.id },
+          data: { 
+            type: 'message', 
+            conversation_id: conversationId, 
+            conversationId: conversationId,
+            senderId, 
+            messageId: msg.id 
+          },
         });
         console.log('[push] onesignal response id:', resp?.body?.id || 'n/a');
       }

@@ -5,6 +5,9 @@ const multer = require('multer');
 const { uploadProduct } = require('../uploadFile');
 const asyncHandler = require('express-async-handler');
 const { supabase } = require('../config/supabase');
+const OneSignal = require('onesignal-node');
+const dotenv = require('dotenv');
+dotenv.config();
 
 // Get all products (pagination, filtering, sorting)
 router.get('/', asyncHandler(async (req, res) => {
@@ -505,5 +508,40 @@ router.post('/bulk', asyncHandler(async (req, res) => {
     res.json({ success: true, message: 'Bulk processed', results });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
+  }
+}));
+
+// ============ NOTIFICATIONS ============
+// POST /products/:productId/notify  { type: 'stock_out', sellerId, productName }
+router.post('/:productId/notify', asyncHandler(async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { type, sellerId, productName } = req.body || {};
+    if (type !== 'stock_out' || !sellerId || !productId) {
+      return res.status(400).json({ success: false, message: 'type stock_out, sellerId, productId required' });
+    }
+
+    const appId = process.env.ONE_SIGNAL_APP_ID;
+    const apiKey = process.env.ONE_SIGNAL_REST_API_KEY;
+    if (!appId || !apiKey) {
+      return res.status(500).json({ success: false, message: 'OneSignal not configured' });
+    }
+
+    const client = new OneSignal.Client(appId, apiKey);
+    const resp = await client.createNotification({
+      app_id: appId,
+      include_external_user_ids: [String(sellerId)],
+      headings: { en: 'Product out of stock' },
+      contents: { en: `'${productName || 'A product'}' is now out of stock. Please restock.` },
+      android_channel_id: process.env.ONE_SIGNAL_ANDROID_CHANNEL_ID || undefined,
+      data: {
+        type: 'stock_out',
+        product_id: String(productId),
+      },
+    });
+    return res.json({ success: true, message: 'Notification sent', data: { id: resp?.body?.id } });
+  } catch (e) {
+    console.error('product notify error:', e);
+    return res.status(500).json({ success: false, message: e.message });
   }
 }));
