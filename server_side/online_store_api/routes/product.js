@@ -533,6 +533,9 @@ router.post('/:productId/notify', asyncHandler(async (req, res) => {
       include_external_user_ids: [String(sellerId)],
       headings: { en: 'Product out of stock' },
       contents: { en: `'${productName || 'A product'}' is now out of stock. Please restock.` },
+      // Ensure notification makes sound on both platforms
+      android_sound: 'default',
+      ios_sound: 'default',
       android_channel_id: process.env.ONE_SIGNAL_ANDROID_CHANNEL_ID || undefined,
       data: {
         type: 'stock_out',
