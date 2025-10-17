@@ -73,6 +73,7 @@ router.get('/', asyncHandler(async (req, res) => {
             quantity: product.quantity,
             price: product.price,
             offerPrice: product.offer_price,
+            is_featured: product.is_featured === true,
             sellerId: product.users ? {
                 _id: product.users.id || product.seller_id,
                 name: product.users.name,
