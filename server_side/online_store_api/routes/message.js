@@ -140,6 +140,45 @@ router.post('/:conversationId/messages', asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Message sent', data: msg });
 }));
 
+// Upload image attachment for a conversation and return a public URL
+router.post('/:conversationId/attachments', asyncHandler(async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    if (!conversationId) return res.status(400).json({ success: false, message: 'conversationId required' });
+
+    const file = (req.files && (req.files.img || req.files.file)) || null;
+    if (!file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+
+    const { supabase } = require('../config/supabase');
+    const safeName = `${Date.now()}_${Math.floor(Math.random()*1000)}_${(file.name || file.originalname || 'image').replace(/\s+/g, '_')}`;
+    const storagePath = `chat/${conversationId}/${safeName}`;
+    const buffer = file.data || file.buffer;
+    const contentType = file.mimetype || 'image/jpeg';
+
+    const { error: uploadError } = await supabase
+      .storage
+      .from('product-images')
+      .upload(storagePath, buffer, { contentType, upsert: false });
+    if (uploadError) {
+      console.error('Supabase upload error (chat):', uploadError);
+      return res.status(500).json({ success: false, message: 'Upload failed' });
+    }
+    const { data: publicData, error: pubErr } = supabase
+      .storage
+      .from('product-images')
+      .getPublicUrl(storagePath);
+    if (pubErr) {
+      console.error('Supabase public URL error (chat):', pubErr);
+      return res.status(500).json({ success: false, message: 'Failed to get public URL' });
+    }
+    const publicUrl = publicData?.publicUrl;
+    return res.json({ success: true, message: 'Attachment uploaded', data: { url: publicUrl } });
+  } catch (e) {
+    console.error('Chat attachment error', e);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+}));
+
 // List messages in conversation
 router.get('/:conversationId/messages', asyncHandler(async (req, res) => {
   const { conversationId } = req.params;
