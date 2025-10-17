@@ -6,44 +6,6 @@ const { uploadProduct } = require('../uploadFile');
 const asyncHandler = require('express-async-handler');
 const { supabase } = require('../config/supabase');
 
-// Get featured products
-router.get('/featured', asyncHandler(async (req, res) => {
-    try {
-        const limit = parseInt(req.query.limit) || 20;
-        const products = await Product.getFeatured(limit);
-        const transformed = (products || []).map(p => ({
-            _id: p.id,
-            name: p.name,
-            description: p.description,
-            quantity: p.quantity,
-            price: p.price,
-            offerPrice: p.offer_price,
-            isFeatured: p.is_featured === true,
-            images: (p.product_images || []).map(img => ({ url: img.url })),
-          }));
-        res.json({ success: true, message: 'Featured products', data: transformed });
-    } catch (e) {
-        res.status(500).json({ success: false, message: e.message });
-    }
-}));
-
-// Admin: toggle featured flag
-router.put('/:id/featured', asyncHandler(async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { isFeatured } = req.body || {};
-        const { data, error } = await supabase
-            .from('products')
-            .update({ is_featured: !!isFeatured })
-            .eq('id', id)
-            .select()
-            .single();
-        if (error) throw error;
-        res.json({ success: true, message: 'Product updated', data });
-    } catch (e) {
-        res.status(500).json({ success: false, message: e.message });
-    }
-}));
 // Get all products (pagination, filtering, sorting)
 router.get('/', asyncHandler(async (req, res) => {
     try {
@@ -73,7 +35,6 @@ router.get('/', asyncHandler(async (req, res) => {
             quantity: product.quantity,
             price: product.price,
             offerPrice: product.offer_price,
-            is_featured: product.is_featured === true,
             sellerId: product.users ? {
                 _id: product.users.id || product.seller_id,
                 name: product.users.name,
