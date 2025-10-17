@@ -182,7 +182,7 @@ class Product {
     return await this.findAll({ search: searchTerm }, page, limit);
   }
 
-  // Get featured products (you can customize this logic)
+  // Get featured products (admin-assigned)
   static async getFeatured(limit = 10) {
     try {
       const { data, error } = await supabase
@@ -194,7 +194,7 @@ class Product {
           brands:pro_brand_id(name),
           product_images(*)
         `)
-        .not('offer_price', 'is', null)
+        .eq('is_featured', true)
         .limit(limit)
         .order('created_at', { ascending: false });
       
