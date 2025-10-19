@@ -8,7 +8,7 @@ const User = require('../models/user');
 const { supabase } = require('../config/supabase');
 
 // Helper function to upload file to Supabase
-async function uploadToSupabase(file, bucket = 'posters') {
+async function uploadToSupabase(file, bucket = process.env.SUPABASE_POSTS_BUCKET || 'product-images') {
   try {
     const fileName = `${Date.now()}_${file.originalname}`;
     const { data, error } = await supabase.storage
