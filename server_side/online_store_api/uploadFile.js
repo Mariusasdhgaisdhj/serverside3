@@ -19,16 +19,26 @@ function ensureDirectoryExists(dirPath) {
   }
 }
 
-// File filter function
+// File filter function (accept jpg/png by mime or extension; allow octet-stream if ext ok)
 const fileFilter = (req, file, cb) => {
-  const filetypes = /jpeg|jpg|png/;
-  const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = filetypes.test(file.mimetype);
-  
-  if (extname && mimetype) {
-    return cb(null, true);
+  try {
+    const filetypes = /jpeg|jpg|png/;
+    const originalName = (file.originalname || '').toLowerCase();
+    const ext = path.extname(originalName);
+    const extOk = filetypes.test(ext);
+    const mime = (file.mimetype || '').toLowerCase();
+    const mimeOk = filetypes.test(mime);
+
+    // Some Android uploads report application/octet-stream; trust extension in that case
+    const isOctetStream = mime === 'application/octet-stream' || mime === '';
+
+    if ((extOk && (mimeOk || isOctetStream))) {
+      return cb(null, true);
+    }
+    return cb(new Error('Error: only .jpeg, .jpg, .png files are allowed!'));
+  } catch (e) {
+    return cb(new Error('Error: invalid upload'));
   }
-  cb(new Error('Error: only .jpeg, .jpg, .png files are allowed!'));
 };
 
 // Category upload (memory storage)
