@@ -395,4 +395,174 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
     }
 }));
 
+// Process refund for an order
+router.post('/:id/refund', asyncHandler(async (req, res) => {
+    try {
+        const orderID = req.params.id;
+        const { amount, reason, adminId } = req.body;
+        
+        if (!amount) {
+            return res.status(400).json({ success: false, message: "Refund amount is required." });
+        }
+
+        // Find the order first
+        const order = await Order.findById(orderID);
+        if (!order) {
+            return res.status(404).json({ success: false, message: "Order not found." });
+        }
+
+        // Check if order can be refunded (must be paid or delivered)
+        const currentStatus = order.orderStatus?.toLowerCase();
+        const refundableStatuses = ['paid', 'processing', 'shipped', 'delivered', 'completed'];
+        
+        if (!refundableStatuses.includes(currentStatus)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: `Order cannot be refunded. Current status: ${currentStatus}. Only paid or completed orders can be refunded.` 
+            });
+        }
+
+        // Record the refund in the database
+        // In a real implementation, this would also integrate with payment gateway APIs
+        const refundData = {
+            order_id: orderID,
+            amount: parseFloat(amount),
+            reason: reason || 'Admin initiated refund',
+            admin_id: adminId,
+            refund_date: new Date().toISOString()
+        };
+
+        const { data: refund, error } = await supabase
+            .from('refunds')
+            .insert([refundData])
+            .select()
+            .single();
+
+        if (error) {
+            throw new Error(`Failed to process refund: ${error.message}`);
+        }
+
+        // Update order status to refunded
+        const updatedOrder = await Order.updateStatus(orderID, 'refunded');
+        
+        if (!updatedOrder) {
+            return res.status(500).json({ success: false, message: "Failed to update order status." });
+        }
+
+        res.json({ 
+            success: true, 
+            message: "Refund processed successfully.", 
+            data: { 
+                order: updatedOrder,
+                refund: refund
+            } 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// Update shipping information
+router.put('/:id/shipping', asyncHandler(async (req, res) => {
+    try {
+        const orderID = req.params.id;
+        const { shippingAddress, trackingUrl, carrier, estimatedDelivery } = req.body;
+        
+        if (!shippingAddress && !trackingUrl && !carrier && !estimatedDelivery) {
+            return res.status(400).json({ success: false, message: "No shipping information provided to update." });
+        }
+
+        // Find the order first
+        const order = await Order.findById(orderID);
+        if (!order) {
+            return res.status(404).json({ success: false, message: "Order not found." });
+        }
+
+        // Prepare update data
+        const updateData = {};
+        if (trackingUrl) updateData.tracking_url = trackingUrl;
+        if (carrier) updateData.shipping_carrier = carrier;
+        if (estimatedDelivery) updateData.estimated_delivery = estimatedDelivery;
+
+        // Update the order
+        const updatedOrder = await Order.update(orderID, updateData);
+        
+        // If shipping address is provided, update it separately
+        if (shippingAddress) {
+            await Order.updateShippingAddress(orderID, shippingAddress);
+        }
+
+        res.json({ 
+            success: true, 
+            message: "Shipping information updated successfully.", 
+            data: updatedOrder 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// Bulk action on orders
+router.post('/bulk-action', asyncHandler(async (req, res) => {
+    try {
+        const { orderIds, action, data } = req.body;
+        
+        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+            return res.status(400).json({ success: false, message: "Order IDs are required." });
+        }
+        
+        if (!action) {
+            return res.status(400).json({ success: false, message: "Action is required." });
+        }
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        // Process each order based on the action
+        for (const orderId of orderIds) {
+            try {
+                switch (action) {
+                    case 'update_status':
+                        if (!data?.status) {
+                            results.failed.push({ id: orderId, reason: "Status is required for update_status action" });
+                            continue;
+                        }
+                        await Order.updateStatus(orderId, data.status);
+                        results.success.push(orderId);
+                        break;
+                        
+                    case 'add_tracking':
+                        if (!data?.trackingUrl) {
+                            results.failed.push({ id: orderId, reason: "Tracking URL is required for add_tracking action" });
+                            continue;
+                        }
+                        await Order.update(orderId, { tracking_url: data.trackingUrl });
+                        results.success.push(orderId);
+                        break;
+                        
+                    case 'delete':
+                        await Order.delete(orderId);
+                        results.success.push(orderId);
+                        break;
+                        
+                    default:
+                        results.failed.push({ id: orderId, reason: `Unknown action: ${action}` });
+                }
+            } catch (error) {
+                results.failed.push({ id: orderId, reason: error.message });
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            message: `Bulk action '${action}' completed with ${results.success.length} successful and ${results.failed.length} failed operations.`, 
+            data: results 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
 module.exports = router;
