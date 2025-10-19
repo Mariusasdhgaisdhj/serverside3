@@ -12,6 +12,7 @@ const uploadMemory = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
 });
+const { supabase } = require('../config/supabase');
 
 // Create or get conversation between buyer and seller
 router.post('/conversation', asyncHandler(async (req, res) => {
@@ -216,6 +217,363 @@ router.post('/conversation/from-order/:orderId', asyncHandler(async (req, res) =
   if (!buyerId || !sellerId) return res.status(400).json({ success: false, message: 'Cannot resolve buyer/seller from order' });
   const convo = await Conversation.getOrCreate(buyerId, sellerId);
   res.json({ success: true, message: 'Conversation created from order', data: convo });
+}));
+
+// ADMIN ENDPOINTS
+
+// Get all conversations (admin only)
+router.get('/admin/conversations', asyncHandler(async (req, res) => {
+  const page = parseInt(req.query.page || '1', 10);
+  const limit = parseInt(req.query.limit || '100', 10);
+  
+  try {
+    // Get all conversations with pagination
+    const { data: conversations, count } = await supabase
+      .from('conversations')
+      .select(`
+        *,
+        buyer:buyer_id(id, name, email, business_name, firstname, lastname, profilepicture),
+        seller:seller_id(id, name, email, business_name, firstname, lastname, profilepicture)
+      `)
+      .order('created_at', { ascending: false })
+      .range((page - 1) * limit, page * limit - 1);
+    
+    // Attach latest message and message counts to each conversation
+    const withPreview = [];
+    for (const c of (conversations || [])) {
+      // Get latest message
+      const { data: latestArr } = await supabase
+        .from('messages')
+        .select('id, text, created_at, sender_id')
+        .eq('conversation_id', c.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      
+      // Get message count
+      const { count: messageCount } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('conversation_id', c.id);
+      
+      // Get unread count (simplified - in a real app you'd track read status)
+      const unreadCount = 0; // Placeholder - would need read tracking implementation
+      
+      withPreview.push({
+        ...c,
+        latestMessage: latestArr?.[0] || null,
+        messageCount,
+        unreadCount
+      });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'All conversations fetched', 
+      data: withPreview, 
+      total: count, 
+      page, 
+      limit 
+    });
+  } catch (error) {
+    console.error('Error fetching admin conversations:', error);
+    res.status(500).json({ success: false, message: 'Server error fetching conversations' });
+  }
+}));
+
+// Get messages in conversation (admin view)
+router.get('/admin/:conversationId/messages', asyncHandler(async (req, res) => {
+  const { conversationId } = req.params;
+  const page = parseInt(req.query.page || '1', 10);
+  const limit = parseInt(req.query.limit || '200', 10);
+  
+  try {
+    const { data, count } = await supabase
+      .from('messages')
+      .select(`
+        *,
+        sender:sender_id(id, name, email, business_name, firstname, lastname, profilepicture)
+      `)
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true })
+      .range((page - 1) * limit, page * limit - 1);
+    
+    res.json({ 
+      success: true, 
+      message: 'Messages fetched (admin view)', 
+      data, 
+      total: count, 
+      page, 
+      limit 
+    });
+  } catch (error) {
+    console.error('Error fetching admin messages:', error);
+    res.status(500).json({ success: false, message: 'Server error fetching messages' });
+  }
+}));
+
+// Moderate message (flag or delete)
+router.patch('/admin/:conversationId/messages/:messageId', asyncHandler(async (req, res) => {
+  const { conversationId, messageId } = req.params;
+  const { action } = req.body;
+  
+  if (!['flag', 'unflag'].includes(action)) {
+    return res.status(400).json({ success: false, message: 'Invalid action. Use "flag" or "unflag"' });
+  }
+  
+  try {
+    // Check if message exists
+    const { data: message } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('id', messageId)
+      .eq('conversation_id', conversationId)
+      .single();
+    
+    if (!message) {
+      return res.status(404).json({ success: false, message: 'Message not found' });
+    }
+    
+    // Update message with flagged status
+    const { data: updated, error } = await supabase
+      .from('messages')
+      .update({ 
+        flagged: action === 'flag',
+        moderated_at: new Date().toISOString()
+      })
+      .eq('id', messageId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    
+    // Log the moderation action
+    await supabase.from('moderation_logs').insert({
+      message_id: messageId,
+      conversation_id: conversationId,
+      action,
+      created_at: new Date().toISOString()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: `Message ${action === 'flag' ? 'flagged' : 'unflagged'} successfully`, 
+      data: updated 
+    });
+  } catch (error) {
+    console.error('Error moderating message:', error);
+    res.status(500).json({ success: false, message: 'Server error moderating message' });
+  }
+}));
+
+// Delete message (admin only)
+router.delete('/admin/:conversationId/messages/:messageId', asyncHandler(async (req, res) => {
+  const { conversationId, messageId } = req.params;
+  
+  try {
+    // Check if message exists
+    const { data: message } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('id', messageId)
+      .eq('conversation_id', conversationId)
+      .single();
+    
+    if (!message) {
+      return res.status(404).json({ success: false, message: 'Message not found' });
+    }
+    
+    // Delete the message
+    const { error } = await supabase
+      .from('messages')
+      .delete()
+      .eq('id', messageId);
+    
+    if (error) throw error;
+    
+    // Log the deletion
+    await supabase.from('moderation_logs').insert({
+      message_id: messageId,
+      conversation_id: conversationId,
+      action: 'delete',
+      created_at: new Date().toISOString()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Message deleted successfully', 
+      data: null 
+    });
+  } catch (error) {
+    console.error('Error deleting message:', error);
+    res.status(500).json({ success: false, message: 'Server error deleting message' });
+  }
+}));
+
+// Close conversation (admin only)
+router.patch('/admin/:id/close', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    // Check if conversation exists
+    const { data: conversation } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (!conversation) {
+      return res.status(404).json({ success: false, message: 'Conversation not found' });
+    }
+    
+    // Update conversation status
+    const { data: updated, error } = await supabase
+      .from('conversations')
+      .update({ 
+        status: 'closed',
+        closed_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    
+    res.json({ 
+      success: true, 
+      message: 'Conversation closed successfully', 
+      data: updated 
+    });
+  } catch (error) {
+    console.error('Error closing conversation:', error);
+    res.status(500).json({ success: false, message: 'Server error closing conversation' });
+  }
+}));
+
+// Delete conversation (admin only)
+router.delete('/admin/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    // Check if conversation exists
+    const { data: conversation } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (!conversation) {
+      return res.status(404).json({ success: false, message: 'Conversation not found' });
+    }
+    
+    // Delete all messages in the conversation first
+    const { error: messagesError } = await supabase
+      .from('messages')
+      .delete()
+      .eq('conversation_id', id);
+    
+    if (messagesError) throw messagesError;
+    
+    // Delete the conversation
+    const { error: convoError } = await supabase
+      .from('conversations')
+      .delete()
+      .eq('id', id);
+    
+    if (convoError) throw convoError;
+    
+    res.json({ 
+      success: true, 
+      message: 'Conversation and all messages deleted successfully', 
+      data: null 
+    });
+  } catch (error) {
+    console.error('Error deleting conversation:', error);
+    res.status(500).json({ success: false, message: 'Server error deleting conversation' });
+  }
+}));
+
+// Bulk action on conversations (admin only)
+router.post('/admin/bulk-action', asyncHandler(async (req, res) => {
+  const { action, conversationIds } = req.body;
+  
+  if (!action || !Array.isArray(conversationIds) || conversationIds.length === 0) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Invalid request. Provide action and array of conversationIds' 
+    });
+  }
+  
+  if (!['close', 'delete'].includes(action)) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Invalid action. Use "close" or "delete"' 
+    });
+  }
+  
+  const results = {
+    success: [],
+    failed: []
+  };
+  
+  try {
+    for (const id of conversationIds) {
+      try {
+        // Check if conversation exists
+        const { data: conversation } = await supabase
+          .from('conversations')
+          .select('id')
+          .eq('id', id)
+          .single();
+        
+        if (!conversation) {
+          results.failed.push({ id, reason: 'Conversation not found' });
+          continue;
+        }
+        
+        if (action === 'close') {
+          // Close conversation
+          const { error } = await supabase
+            .from('conversations')
+            .update({ 
+              status: 'closed',
+              closed_at: new Date().toISOString()
+            })
+            .eq('id', id);
+          
+          if (error) throw error;
+          results.success.push(id);
+        } else if (action === 'delete') {
+          // Delete messages first
+          const { error: messagesError } = await supabase
+            .from('messages')
+            .delete()
+            .eq('conversation_id', id);
+          
+          if (messagesError) throw messagesError;
+          
+          // Delete conversation
+          const { error: convoError } = await supabase
+            .from('conversations')
+            .delete()
+            .eq('id', id);
+          
+          if (convoError) throw convoError;
+          results.success.push(id);
+        }
+      } catch (error) {
+        results.failed.push({ id, reason: error.message });
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      message: `Bulk ${action} completed with ${results.success.length} successful and ${results.failed.length} failed operations`, 
+      data: results 
+    });
+  } catch (error) {
+    console.error(`Error performing bulk ${action}:`, error);
+    res.status(500).json({ success: false, message: 'Server error performing bulk action' });
+  }
 }));
 
 module.exports = router;
