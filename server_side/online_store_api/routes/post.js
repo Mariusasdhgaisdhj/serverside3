@@ -36,6 +36,50 @@ async function uploadToSupabase(file, bucket = process.env.SUPABASE_POSTS_BUCKET
   }
 }
 
+router.post('/:postId/delete', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Post not found' 
+      });
+    }
+    
+    // Delete via Supabase (handles RLS)
+    const { data: deletedPost, error } = await supabase
+      .from('posts')
+      .delete()
+      .eq('id', postId)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Supabase delete error:', error);
+      throw new Error(`Failed to delete post: ${error.message}`);
+    }
+    
+    // Optionally, delete associated comments/views (if needed)
+    // await supabase.from('comments').delete().eq('post_id', postId);
+    // await supabase.from('post_views').delete().eq('post_id', postId);
+    
+    res.json({ 
+      success: true, 
+      message: 'Post deleted successfully',
+      data: deletedPost 
+    });
+  } catch (error) {
+    console.error('Error deleting post:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to delete post', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
 // list posts
 router.get('/', asyncHandler(async (req, res) => {
   try {
