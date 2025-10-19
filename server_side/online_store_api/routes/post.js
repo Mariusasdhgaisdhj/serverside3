@@ -170,8 +170,8 @@ router.post('/', asyncHandler(async (req, res) => {
       imageUrl = String(req.body.imageUrl);
     }
     
-    // FIX: Parse tags to ensure it's a cleaned string (or null) for text column
-    let parsedTags = null;
+    // Normalize tags to a string[] for Postgres text[] column
+    let parsedTags = [];
     if (tags) {
       let tagArray;
       if (Array.isArray(tags)) {
@@ -181,9 +181,7 @@ router.post('/', asyncHandler(async (req, res) => {
       } else {
         tagArray = [];
       }
-      if (tagArray.length > 0) {
-        parsedTags = tagArray.join(',');
-      }
+      if (tagArray.length > 0) parsedTags = tagArray;
     }
     
     const post = await Post.create({ 
@@ -191,7 +189,7 @@ router.post('/', asyncHandler(async (req, res) => {
       title: title.trim(), 
       content: content.trim(),
       category: category || 'General',
-      tags: parsedTags,  // Now always string or null
+      tags: parsedTags,  // string[] (text[] column)
       image_url: imageUrl
     });
     
