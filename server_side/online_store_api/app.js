@@ -11,9 +11,10 @@ app.use(cors({ origin: '*' }));
 app.use(bodyParser.json());
 
 // Static assets (note: on serverless, local disk is ephemeral)
-app.use('/image/products', express.static('public/products'));
-app.use('/image/category', express.static('public/category'));
-app.use('/image/poster', express.static('public/posters'));
+// These routes are disabled since we now use Supabase Storage for all file uploads
+// app.use('/image/products', express.static('public/products'));
+// app.use('/image/category', express.static('public/category'));
+// app.use('/image/poster', express.static('public/posters'));
 
 // Supabase connection test (non-blocking)
 testConnection().then(connected => {

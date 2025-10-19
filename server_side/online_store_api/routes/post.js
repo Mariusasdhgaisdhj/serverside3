@@ -7,6 +7,34 @@ const { Post, Comment } = require('../models/post');
 const User = require('../models/user');
 const { supabase } = require('../config/supabase');
 
+// Helper function to upload file to Supabase
+async function uploadToSupabase(file, bucket = 'posters') {
+  try {
+    const fileName = `${Date.now()}_${file.originalname}`;
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(fileName, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false
+      });
+
+    if (error) {
+      console.error('Supabase upload error:', error);
+      throw new Error(`Failed to upload file: ${error.message}`);
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(fileName);
+
+    return publicUrl;
+  } catch (error) {
+    console.error('Upload to Supabase failed:', error);
+    throw error;
+  }
+}
+
 // list posts
 router.get('/', asyncHandler(async (req, res) => {
   try {
@@ -81,10 +109,18 @@ router.post('/', asyncHandler(async (req, res) => {
     
     const { category, tags } = req.body || {};
     let imageUrl = null;
+    
     if (req.file) {
-      // Use the actual domain instead of localhost
-      const baseUrl = process.env.BASE_URL || 'https://serverside3.vercel.app';
-      imageUrl = `${baseUrl}/image/poster/${req.file.filename}`;
+      try {
+        imageUrl = await uploadToSupabase(req.file, 'posters');
+        console.log('Post image uploaded to Supabase:', imageUrl);
+      } catch (uploadError) {
+        console.error('Failed to upload post image:', uploadError);
+        return res.status(500).json({ 
+          success: false, 
+          message: 'Failed to upload image. Please try again.' 
+        });
+      }
     } else if (req.body.imageUrl) {
       imageUrl = String(req.body.imageUrl);
     }

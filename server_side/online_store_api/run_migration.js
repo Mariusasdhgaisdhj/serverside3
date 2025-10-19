@@ -28,8 +28,8 @@ async function runMigration() {
     try {
         console.log('🚀 Starting database migration...');
         
-        // Read the migration SQL file
-        const migrationPath = path.join(__dirname, 'database', 'migrations', 'add_profile_fields.sql');
+        // Read the migration SQL file (add moderation flags for posts)
+        const migrationPath = path.join(__dirname, 'database', 'migrations', 'add_post_moderation_flags.sql');
         const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
         
         console.log('📄 Migration SQL:');
@@ -53,8 +53,8 @@ async function runMigration() {
         const { data: columns, error: verifyError } = await supabase
             .from('information_schema.columns')
             .select('column_name, data_type')
-            .eq('table_name', 'users')
-            .in('column_name', ['profilepicture', 'addressinfo']);
+            .eq('table_name', 'posts')
+            .in('column_name', ['is_pinned', 'is_locked', 'is_hidden', 'is_flagged']);
         
         if (verifyError) {
             console.error('❌ Verification failed:', verifyError);
@@ -117,11 +117,11 @@ async function main() {
         await runMigration();
     } else {
         console.log('\n📋 Manual Migration Instructions:');
-        console.log('1. Go to your Supabase dashboard');
-        console.log('2. Navigate to SQL Editor');
-        console.log('3. Run the following SQL:');
+    console.log('1. Go to your Supabase dashboard');
+    console.log('2. Navigate to SQL Editor');
+    console.log('3. Run the following SQL:');
         console.log('\n' + '='.repeat(50));
-        console.log(fs.readFileSync(path.join(__dirname, 'database', 'migrations', 'add_profile_fields.sql'), 'utf8'));
+        console.log(fs.readFileSync(path.join(__dirname, 'database', 'migrations', 'add_post_moderation_flags.sql'), 'utf8'));
         console.log('='.repeat(50));
     }
 }
