@@ -166,7 +166,7 @@ router.post('/', asyncHandler(async (req, res) => {
     
     if (req.file) {
       try {
-        imageUrl = await uploadToSupabase(req.file, 'posters');
+        imageUrl = await uploadToSupabase(req.file);
         console.log('Post image uploaded to Supabase:', imageUrl);
       } catch (uploadError) {
         console.error('Failed to upload post image:', uploadError);
