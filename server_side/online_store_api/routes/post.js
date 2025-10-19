@@ -10,7 +10,10 @@ const { supabase } = require('../config/supabase');
 // Helper function to upload file to Supabase
 async function uploadToSupabase(file, bucket = process.env.SUPABASE_POSTS_BUCKET || 'product-images') {
   try {
-    const safeName = `${Date.now()}_${(file.originalname || 'image').replace(/\s+/g, '_')}`;
+    const original = (file.originalname || 'image').toLowerCase();
+    // Replace any character that is not alphanumeric, dot, dash or underscore
+    const sanitizedBase = original.replace(/[^a-z0-9._-]+/g, '_');
+    const safeName = `${Date.now()}_${sanitizedBase}`;
     const fileName = `posts/${safeName}`; // keep forum uploads under posts/
     const { data, error } = await supabase.storage
       .from(bucket)
