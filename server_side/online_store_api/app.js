@@ -10,6 +10,7 @@ const app = express();
 app.use(cors({ origin: '*' }));
 app.use(bodyParser.json());
 
+
 // Static assets (note: on serverless, local disk is ephemeral)
 app.use('/image/products', express.static('public/products'));
 app.use('/image/category', express.static('public/category'));

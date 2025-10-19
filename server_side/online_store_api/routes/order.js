@@ -4,6 +4,7 @@ const router = express.Router();
 const Order = require('../models/order');
 const OneSignal = require('onesignal-node');
 const dotenv = require('dotenv');
+const { supabase } = require('../config/supabase');
 dotenv.config();
 
 // Initialize OneSignal client (only if environment variables are set)
@@ -91,6 +92,266 @@ async function sendRefundNotifications(order, amount, reason, adminId) {
     }
     
 }
+
+// ============================================
+// CRITICAL: PAYMENT ROUTES MUST COME FIRST
+// These specific routes must be defined BEFORE any parameterized routes like /:id
+// ============================================
+
+// Get payments with filtering and pagination
+router.get('/payments', asyncHandler(async (req, res) => {
+    try {
+        const { page = 1, limit = 50, search, status, paymentMethod, dateFrom, dateTo, sellerId } = req.query;
+
+        // Build filters
+        let query = supabase
+            .from('orders')
+            .select('*', { count: 'exact' });
+
+        if (status) query = query.eq('order_status', status);
+        if (paymentMethod) query = query.eq('payment_method', paymentMethod);
+        if (sellerId) query = query.eq('seller_id', sellerId);
+        
+        // Date range filter
+        if (dateFrom) query = query.gte('created_at', dateFrom);
+        if (dateTo) query = query.lte('created_at', dateTo);
+
+        // Execute query
+        const { data: orders, error, count } = await query
+            .order('created_at', { ascending: false })
+            .range((page - 1) * limit, page * limit - 1);
+
+        if (error) {
+            throw new Error(`Failed to fetch orders: ${error.message}`);
+        }
+
+        // Transform orders to payment format
+        let payments = orders.map(order => ({
+            _id: order.id,
+            orderId: order.id,
+            userId: order.user_id,
+            amount: order.total_price || 0,
+            currency: 'PHP',
+            paymentMethod: order.payment_method || 'Unknown',
+            status: order.order_status || 'pending',
+            referenceNumber: order.reference_number,
+            transactionId: order.id,
+            createdAt: order.created_at,
+            updatedAt: order.updated_at,
+            metadata: {
+                sellerId: order.seller_id,
+                items: order.items
+            }
+        }));
+
+        // Apply search filter if provided
+        if (search) {
+            const searchLower = search.toLowerCase();
+            payments = payments.filter(payment => 
+                payment._id.toLowerCase().includes(searchLower) ||
+                payment.orderId.toLowerCase().includes(searchLower) ||
+                payment.referenceNumber?.toLowerCase().includes(searchLower) ||
+                payment.transactionId?.toLowerCase().includes(searchLower)
+            );
+        }
+
+        res.json({ 
+            success: true, 
+            message: "Payments retrieved successfully.", 
+            data: payments,
+            total: count || 0,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil((count || 0) / limit)
+        });
+    } catch (error) {
+        console.error('Error fetching payments:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// Get payment statistics
+router.get('/payments/stats', asyncHandler(async (req, res) => {
+    try {
+        const { dateFrom, dateTo } = req.query;
+        
+        // Build query
+        let query = supabase.from('orders').select('*');
+        
+        if (dateFrom) query = query.gte('created_at', dateFrom);
+        if (dateTo) query = query.lte('created_at', dateTo);
+
+        const { data: orders, error } = await query;
+
+        if (error) {
+            throw new Error(`Failed to fetch orders: ${error.message}`);
+        }
+
+        // Calculate statistics
+        const totalTransactions = orders.length;
+        const totalRevenue = orders.reduce((sum, order) => sum + (order.total_price || 0), 0);
+        const successfulPayments = orders.filter(o => o.order_status === 'paid').length;
+        const pendingPayments = orders.filter(o => o.order_status === 'pending').length;
+        const failedPayments = orders.filter(o => o.order_status === 'cancelled').length;
+        const refundedPayments = orders.filter(o => o.order_status === 'refunded').length;
+        const disputedPayments = orders.filter(o => o.order_status === 'disputed').length;
+        
+        const averageTransactionValue = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
+        const successRate = totalTransactions > 0 ? (successfulPayments / totalTransactions) * 100 : 0;
+        const platformEarnings = totalRevenue * 0.05; // 5% platform fee
+        
+        // Payment method distribution
+        const paymentMethodDistribution = {};
+        orders.forEach(order => {
+            const method = order.payment_method || 'Unknown';
+            if (!paymentMethodDistribution[method]) {
+                paymentMethodDistribution[method] = { count: 0, amount: 0 };
+            }
+            paymentMethodDistribution[method].count++;
+            paymentMethodDistribution[method].amount += order.total_price || 0;
+        });
+
+        const stats = {
+            totalTransactions,
+            totalRevenue,
+            successfulPayments,
+            pendingPayments,
+            failedPayments,
+            refundedPayments,
+            disputedPayments,
+            averageTransactionValue,
+            successRate,
+            platformEarnings,
+            pendingPayouts: 0, // This would be calculated from seller payouts
+            paymentMethodDistribution
+        };
+
+        res.json({ 
+            success: true, 
+            message: "Payment statistics retrieved successfully.", 
+            data: stats 
+        });
+    } catch (error) {
+        console.error('Error fetching payment stats:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// Bulk action on payments
+router.post('/payments/bulk-action', asyncHandler(async (req, res) => {
+    try {
+        const { paymentIds, action, data } = req.body;
+        
+        if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0) {
+            return res.status(400).json({ success: false, message: "Payment IDs are required." });
+        }
+        
+        if (!action) {
+            return res.status(400).json({ success: false, message: "Action is required." });
+        }
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        // Process each payment based on the action
+        for (const paymentId of paymentIds) {
+            try {
+                // Find the order associated with this payment
+                const order = await Order.findById(paymentId);
+                
+                if (!order) {
+                    results.failed.push({ id: paymentId, reason: "No order found for this payment" });
+                    continue;
+                }
+
+                switch (action) {
+                    case 'mark_paid':
+                        await Order.updateStatus(order.id, 'paid');
+                        results.success.push(paymentId);
+                        break;
+                        
+                    case 'refund':
+                        if (!data?.amount) {
+                            results.failed.push({ id: paymentId, reason: "Amount is required for refund action" });
+                            continue;
+                        }
+                        // Process refund logic here
+                        await Order.updateStatus(order.id, 'refunded');
+                        results.success.push(paymentId);
+                        break;
+                        
+                    case 'cancel':
+                        await Order.updateStatus(order.id, 'cancelled');
+                        results.success.push(paymentId);
+                        break;
+                        
+                    default:
+                        results.failed.push({ id: paymentId, reason: `Unknown action: ${action}` });
+                }
+            } catch (error) {
+                results.failed.push({ id: paymentId, reason: error.message });
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            message: `Bulk payment action '${action}' completed with ${results.success.length} successful and ${results.failed.length} failed operations.`, 
+            data: results 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// Get single payment by ID
+router.get('/payments/:id', asyncHandler(async (req, res) => {
+    try {
+        const paymentId = req.params.id;
+        
+        const { data: order, error } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('id', paymentId)
+            .single();
+
+        if (error) {
+            return res.status(404).json({ success: false, message: "Payment not found." });
+        }
+
+        // Transform order to payment format
+        const payment = {
+            _id: order.id,
+            orderId: order.id,
+            userId: order.user_id,
+            amount: order.total_price || 0,
+            currency: 'PHP',
+            paymentMethod: order.payment_method || 'Unknown',
+            status: order.order_status || 'pending',
+            referenceNumber: order.reference_number,
+            transactionId: order.id,
+            createdAt: order.created_at,
+            updatedAt: order.updated_at,
+            metadata: {
+                sellerId: order.seller_id,
+                items: order.items
+            }
+        };
+
+        res.json({ 
+            success: true, 
+            message: "Payment retrieved successfully.", 
+            data: payment 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// ============================================
+// REGULAR ORDER ROUTES
+// ============================================
 
 // Get all orders (Supabase)
 router.get('/', asyncHandler(async (req, res) => {
@@ -181,28 +442,13 @@ router.get('/', asyncHandler(async (req, res) => {
     }
 }));
 
-
+// Get orders by user ID
 router.get('/orderByUserId/:userId', asyncHandler(async (req, res) => {
     try {
         const userId = req.params.userId;
         const { page = 1, limit = 50 } = req.query;
         const { data } = await Order.findByUserId(userId, Number(page), Number(limit));
         res.json({ success: true, message: "Orders retrieved successfully.", data });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-}));
-
-
-// Get an order by ID (Supabase)
-router.get('/:id', asyncHandler(async (req, res) => {
-    try {
-        const orderID = req.params.id;
-        const order = await Order.findById(orderID);
-        if (!order) {
-            return res.status(404).json({ success: false, message: "Order not found." });
-        }
-        res.json({ success: true, message: "Order retrieved successfully.", data: order });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -243,7 +489,6 @@ router.post('/', asyncHandler(async (req, res) => {
 
     try {
         // Validate that user is not trying to buy their own products
-        const { supabase } = require('../config/supabase');
         const productIds = Array.isArray(items) ? items.map((it) => it.productID).filter(Boolean) : [];
         
         if (productIds.length > 0) {
@@ -307,7 +552,6 @@ router.post('/', asyncHandler(async (req, res) => {
         
         // Auto-create conversation(s) between buyer and seller(s)
         try {
-            const { supabase } = require('../config/supabase');
             const productIds = Array.isArray(items) ? items.map((it) => it.productID).filter(Boolean) : [];
             if (productIds.length > 0) {
                 const { data: proRows, error: proErr } = await supabase
@@ -340,44 +584,6 @@ router.post('/', asyncHandler(async (req, res) => {
             success: false, 
             message: error.message || "Failed to create order" 
         });
-    }
-}));
-
-// Update an order (Supabase)
-router.put('/:id', asyncHandler(async (req, res) => {
-    try {
-        const orderID = req.params.id;
-        const { orderStatus, trackingUrl } = req.body;
-        if (!orderStatus && !trackingUrl) {
-            return res.status(400).json({ success: false, message: "Nothing to update." });
-        }
-
-        const updateData = {};
-        if (orderStatus) updateData.order_status = orderStatus;
-        if (trackingUrl) updateData.tracking_url = trackingUrl;
-
-        const updatedOrder = await Order.update(orderID, updateData);
-        if (!updatedOrder) {
-            return res.status(404).json({ success: false, message: "Order not found." });
-        }
-
-        res.json({ success: true, message: "Order updated successfully.", data: updatedOrder });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-}));
-
-// Delete an order (Supabase)
-router.delete('/:id', asyncHandler(async (req, res) => {
-    try {
-        const orderID = req.params.id;
-        const ok = await Order.delete(orderID);
-        if (!ok) {
-            return res.status(404).json({ success: false, message: "Order not found." });
-        }
-        res.json({ success: true, message: "Order deleted successfully." });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
     }
 }));
 
@@ -766,260 +972,63 @@ router.post('/:id/resolve-dispute', asyncHandler(async (req, res) => {
     }
 }));
 
-// Bulk action on payments
-router.post('/payments/bulk-action', asyncHandler(async (req, res) => {
+// Get an order by ID (Supabase) - MUST BE LAST
+router.get('/:id', asyncHandler(async (req, res) => {
     try {
-        const { paymentIds, action, data } = req.body;
+        const orderID = req.params.id;
         
-        if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0) {
-            return res.status(400).json({ success: false, message: "Payment IDs are required." });
+        // Validate UUID format
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(orderID)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Invalid order ID format. Expected a valid UUID." 
+            });
         }
         
-        if (!action) {
-            return res.status(400).json({ success: false, message: "Action is required." });
+        const order = await Order.findById(orderID);
+        if (!order) {
+            return res.status(404).json({ success: false, message: "Order not found." });
         }
-
-        const results = {
-            success: [],
-            failed: []
-        };
-
-        // Process each payment based on the action
-        for (const paymentId of paymentIds) {
-            try {
-                // Find the order associated with this payment
-                const order = await Order.findByPaymentId(paymentId);
-                
-                if (!order) {
-                    results.failed.push({ id: paymentId, reason: "No order found for this payment" });
-                    continue;
-                }
-
-                switch (action) {
-                    case 'mark_paid':
-                        await Order.updateStatus(order.id, 'paid');
-                        results.success.push(paymentId);
-                        break;
-                        
-                    case 'refund':
-                        if (!data?.amount) {
-                            results.failed.push({ id: paymentId, reason: "Amount is required for refund action" });
-                            continue;
-                        }
-                        // Process refund logic here
-                        await Order.updateStatus(order.id, 'refunded');
-                        results.success.push(paymentId);
-                        break;
-                        
-                    case 'cancel':
-                        await Order.updateStatus(order.id, 'cancelled');
-                        results.success.push(paymentId);
-                        break;
-                        
-                    default:
-                        results.failed.push({ id: paymentId, reason: `Unknown action: ${action}` });
-                }
-            } catch (error) {
-                results.failed.push({ id: paymentId, reason: error.message });
-            }
-        }
-
-        res.json({ 
-            success: true, 
-            message: `Bulk payment action '${action}' completed with ${results.success.length} successful and ${results.failed.length} failed operations.`, 
-            data: results 
-        });
+        res.json({ success: true, message: "Order retrieved successfully.", data: order });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 }));
 
-// Get payment statistics
-router.get('/payments/stats', asyncHandler(async (req, res) => {
+// Update an order (Supabase)
+router.put('/:id', asyncHandler(async (req, res) => {
     try {
-        const { dateFrom, dateTo } = req.query;
-        
-        // Build date filter
-        let dateFilter = {};
-        if (dateFrom || dateTo) {
-            dateFilter.created_at = {};
-            if (dateFrom) dateFilter.created_at.gte = dateFrom;
-            if (dateTo) dateFilter.created_at.lte = dateTo;
+        const orderID = req.params.id;
+        const { orderStatus, trackingUrl } = req.body;
+        if (!orderStatus && !trackingUrl) {
+            return res.status(400).json({ success: false, message: "Nothing to update." });
         }
 
-        // Get orders for statistics
-        const { data: orders, error } = await supabase
-            .from('orders')
-            .select('*')
-            .match(dateFilter);
+        const updateData = {};
+        if (orderStatus) updateData.order_status = orderStatus;
+        if (trackingUrl) updateData.tracking_url = trackingUrl;
 
-        if (error) {
-            throw new Error(`Failed to fetch orders: ${error.message}`);
+        const updatedOrder = await Order.update(orderID, updateData);
+        if (!updatedOrder) {
+            return res.status(404).json({ success: false, message: "Order not found." });
         }
 
-        // Calculate statistics
-        const totalTransactions = orders.length;
-        const totalRevenue = orders.reduce((sum, order) => sum + (order.total_price || 0), 0);
-        const successfulPayments = orders.filter(o => o.order_status === 'paid').length;
-        const pendingPayments = orders.filter(o => o.order_status === 'pending').length;
-        const failedPayments = orders.filter(o => o.order_status === 'cancelled').length;
-        const refundedPayments = orders.filter(o => o.order_status === 'refunded').length;
-        const disputedPayments = orders.filter(o => o.order_status === 'disputed').length;
-        
-        const averageTransactionValue = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
-        const successRate = totalTransactions > 0 ? (successfulPayments / totalTransactions) * 100 : 0;
-        const platformEarnings = totalRevenue * 0.05; // 5% platform fee
-        
-        // Payment method distribution
-        const paymentMethodDistribution = {};
-        orders.forEach(order => {
-            const method = order.payment_method || 'Unknown';
-            if (!paymentMethodDistribution[method]) {
-                paymentMethodDistribution[method] = { count: 0, amount: 0 };
-            }
-            paymentMethodDistribution[method].count++;
-            paymentMethodDistribution[method].amount += order.total_price || 0;
-        });
-
-        const stats = {
-            totalTransactions,
-            totalRevenue,
-            successfulPayments,
-            pendingPayments,
-            failedPayments,
-            refundedPayments,
-            disputedPayments,
-            averageTransactionValue,
-            successRate,
-            platformEarnings,
-            pendingPayouts: 0, // This would be calculated from seller payouts
-            paymentMethodDistribution
-        };
-
-        res.json({ 
-            success: true, 
-            message: "Payment statistics retrieved successfully.", 
-            data: stats 
-        });
+        res.json({ success: true, message: "Order updated successfully.", data: updatedOrder });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 }));
 
-// Get payments with filtering and pagination
-router.get('/payments', asyncHandler(async (req, res) => {
+// Delete an order (Supabase)
+router.delete('/:id', asyncHandler(async (req, res) => {
     try {
-        const { page = 1, limit = 50, search, status, paymentMethod, dateFrom, dateTo, sellerId } = req.query;
-
-        // Build filters
-        let filters = {};
-        if (status) filters.order_status = status;
-        if (paymentMethod) filters.payment_method = paymentMethod;
-        if (sellerId) filters.seller_id = sellerId;
-        
-        // Date range filter
-        if (dateFrom || dateTo) {
-            filters.created_at = {};
-            if (dateFrom) filters.created_at.gte = dateFrom;
-            if (dateTo) filters.created_at.lte = dateTo;
+        const orderID = req.params.id;
+        const ok = await Order.delete(orderID);
+        if (!ok) {
+            return res.status(404).json({ success: false, message: "Order not found." });
         }
-
-        // Get orders (treating them as payments for now)
-        const { data: orders, error, count } = await supabase
-            .from('orders')
-            .select('*', { count: 'exact' })
-            .match(filters)
-            .order('created_at', { ascending: false })
-            .range((page - 1) * limit, page * limit - 1);
-
-        if (error) {
-            throw new Error(`Failed to fetch orders: ${error.message}`);
-        }
-
-        // Transform orders to payment format
-        const payments = orders.map(order => ({
-            _id: order.id,
-            orderId: order.id,
-            userId: order.user_id,
-            amount: order.total_price || 0,
-            currency: 'PHP',
-            paymentMethod: order.payment_method || 'Unknown',
-            status: order.order_status || 'pending',
-            referenceNumber: order.reference_number,
-            transactionId: order.id,
-            createdAt: order.created_at,
-            updatedAt: order.updated_at,
-            metadata: {
-                sellerId: order.seller_id,
-                items: order.items
-            }
-        }));
-
-        // Apply search filter if provided
-        let filteredPayments = payments;
-        if (search) {
-            const searchLower = search.toLowerCase();
-            filteredPayments = payments.filter(payment => 
-                payment._id.toLowerCase().includes(searchLower) ||
-                payment.orderId.toLowerCase().includes(searchLower) ||
-                payment.referenceNumber?.toLowerCase().includes(searchLower) ||
-                payment.transactionId?.toLowerCase().includes(searchLower)
-            );
-        }
-
-        res.json({ 
-            success: true, 
-            message: "Payments retrieved successfully.", 
-            data: filteredPayments,
-            total: count || 0,
-            page: parseInt(page),
-            limit: parseInt(limit),
-            totalPages: Math.ceil((count || 0) / limit)
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-}));
-
-// Get single payment
-router.get('/payments/:id', asyncHandler(async (req, res) => {
-    try {
-        const paymentId = req.params.id;
-        
-        const { data: order, error } = await supabase
-            .from('orders')
-            .select('*')
-            .eq('id', paymentId)
-            .single();
-
-        if (error) {
-            return res.status(404).json({ success: false, message: "Payment not found." });
-        }
-
-        // Transform order to payment format
-        const payment = {
-            _id: order.id,
-            orderId: order.id,
-            userId: order.user_id,
-            amount: order.total_price || 0,
-            currency: 'PHP',
-            paymentMethod: order.payment_method || 'Unknown',
-            status: order.order_status || 'pending',
-            referenceNumber: order.reference_number,
-            transactionId: order.id,
-            createdAt: order.created_at,
-            updatedAt: order.updated_at,
-            metadata: {
-                sellerId: order.seller_id,
-                items: order.items
-            }
-        };
-
-        res.json({ 
-            success: true, 
-            message: "Payment retrieved successfully.", 
-            data: payment 
-        });
+        res.json({ success: true, message: "Order deleted successfully." });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
