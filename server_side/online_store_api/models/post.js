@@ -4,9 +4,18 @@ class Post {
   // Create a new post
   static async create(postData) {
     try {
+      // Initialize moderation fields if not provided
+      const postWithDefaults = {
+        ...postData,
+        is_pinned: postData.is_pinned || false,
+        is_locked: postData.is_locked || false,
+        is_hidden: postData.is_hidden || false,
+        is_flagged: postData.is_flagged || false
+      };
+      
       const { data, error } = await supabase
         .from('posts')
-        .insert([postData])
+        .insert([postWithDefaults])
         .select()
         .single();
       

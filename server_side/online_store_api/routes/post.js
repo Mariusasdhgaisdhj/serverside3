@@ -402,6 +402,225 @@ router.delete('/comments/:commentId', asyncHandler(async (req, res) => {
   }
 }));
 
+// Pin a post
+router.post('/:postId/pin', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+    
+    const updated = await Post.update(postId, { 
+      is_pinned: !post.is_pinned, // Toggle pin status
+      updated_at: new Date().toISOString()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: post.is_pinned ? 'Post unpinned successfully' : 'Post pinned successfully',
+      data: updated
+    });
+  } catch (error) {
+    console.error('Error pinning/unpinning post:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to pin/unpin post', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
+// Lock a post
+router.post('/:postId/lock', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+    
+    const updated = await Post.update(postId, { 
+      is_locked: !post.is_locked, // Toggle lock status
+      updated_at: new Date().toISOString()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: post.is_locked ? 'Post unlocked successfully' : 'Post locked successfully',
+      data: updated
+    });
+  } catch (error) {
+    console.error('Error locking/unlocking post:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to lock/unlock post', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
+// Hide a post
+router.post('/:postId/hide', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+    
+    const updated = await Post.update(postId, { 
+      is_hidden: !post.is_hidden, // Toggle hidden status
+      updated_at: new Date().toISOString()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: post.is_hidden ? 'Post unhidden successfully' : 'Post hidden successfully',
+      data: updated
+    });
+  } catch (error) {
+    console.error('Error hiding/unhiding post:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to hide/unhide post', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
+// Moderate a post
+router.post('/:postId/moderate', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { reason, action } = req.body;
+    
+    if (!action) {
+      return res.status(400).json({ success: false, message: 'Action is required' });
+    }
+    
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+    
+    const updateData = {
+      updated_at: new Date().toISOString(),
+      moderation_reason: reason || null
+    };
+    
+    // Apply the requested action
+    if (action === 'flag') {
+      updateData.is_flagged = true;
+    } else if (action === 'unflag') {
+      updateData.is_flagged = false;
+      updateData.moderation_reason = null;
+    }
+    
+    const updated = await Post.update(postId, updateData);
+    
+    res.json({ 
+      success: true, 
+      message: 'Post moderated successfully',
+      data: updated
+    });
+  } catch (error) {
+    console.error('Error moderating post:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to moderate post', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
+// Bulk action on posts
+router.post('/bulk-action', asyncHandler(async (req, res) => {
+  try {
+    const { action, postIds } = req.body;
+    
+    if (!action || !Array.isArray(postIds) || postIds.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Action and postIds array are required' 
+      });
+    }
+    
+    const updateData = {
+      updated_at: new Date().toISOString()
+    };
+    
+    // Set the appropriate field based on the action
+    switch (action) {
+      case 'pin':
+        updateData.is_pinned = true;
+        break;
+      case 'unpin':
+        updateData.is_pinned = false;
+        break;
+      case 'lock':
+        updateData.is_locked = true;
+        break;
+      case 'unlock':
+        updateData.is_locked = false;
+        break;
+      case 'hide':
+        updateData.is_hidden = true;
+        break;
+      case 'unhide':
+        updateData.is_hidden = false;
+        break;
+      case 'flag':
+        updateData.is_flagged = true;
+        break;
+      case 'unflag':
+        updateData.is_flagged = false;
+        break;
+      case 'delete':
+        // Handle bulk deletion
+        const { count, error } = await supabase
+          .from('posts')
+          .delete()
+          .in('id', postIds);
+          
+        if (error) throw error;
+        
+        return res.json({ 
+          success: true, 
+          message: `${count} posts deleted successfully` 
+        });
+      default:
+        return res.status(400).json({ 
+          success: false, 
+          message: `Unknown action: ${action}` 
+        });
+    }
+    
+    // Update all posts with the specified IDs
+    const { error } = await supabase
+      .from('posts')
+      .update(updateData)
+      .in('id', postIds);
+      
+    if (error) throw error;
+    
+    res.json({ 
+      success: true, 
+      message: `Bulk action '${action}' applied to ${postIds.length} posts successfully` 
+    });
+  } catch (error) {
+    console.error('Error performing bulk action:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to perform bulk action', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
 module.exports = router;
 
 
