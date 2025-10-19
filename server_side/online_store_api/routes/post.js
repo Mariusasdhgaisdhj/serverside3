@@ -82,7 +82,9 @@ router.post('/', asyncHandler(async (req, res) => {
     const { category, tags } = req.body || {};
     let imageUrl = null;
     if (req.file) {
-      imageUrl = `http://localhost:3000/image/poster/${req.file.filename}`;
+      // Use the actual domain instead of localhost
+      const baseUrl = process.env.BASE_URL || 'https://serverside3.vercel.app';
+      imageUrl = `${baseUrl}/image/poster/${req.file.filename}`;
     } else if (req.body.imageUrl) {
       imageUrl = String(req.body.imageUrl);
     }

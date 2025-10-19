@@ -7,6 +7,200 @@ const dotenv = require('dotenv');
 const { supabase } = require('../config/supabase');
 dotenv.config();
 
+// ============================================
+// PAYMENT ROUTES - MUST BE FIRST TO AVOID CONFLICTS
+// ============================================
+
+// Get payments with filtering and pagination
+router.get('/payments', asyncHandler(async (req, res) => {
+    try {
+        const { page = 1, limit = 50, search, status, paymentMethod, dateFrom, dateTo, sellerId } = req.query;
+
+        // Build filters
+        let query = supabase
+            .from('orders')
+            .select('*', { count: 'exact' });
+
+        if (status) query = query.eq('order_status', status);
+        if (paymentMethod) query = query.eq('payment_method', paymentMethod);
+        if (sellerId) query = query.eq('seller_id', sellerId);
+        
+        // Date range filter
+        if (dateFrom) query = query.gte('created_at', dateFrom);
+        if (dateTo) query = query.lte('created_at', dateTo);
+
+        // Execute query
+        const { data: orders, error, count } = await query
+            .order('created_at', { ascending: false })
+            .range((page - 1) * limit, page * limit - 1);
+
+        if (error) {
+            throw new Error(`Failed to fetch orders: ${error.message}`);
+        }
+
+        // Transform orders to payment format
+        let payments = orders.map(order => ({
+            _id: order.id,
+            orderId: order.id,
+            userId: order.user_id,
+            amount: order.total_price || 0,
+            currency: 'PHP',
+            paymentMethod: order.payment_method || 'Unknown',
+            status: order.order_status || 'pending',
+            referenceNumber: order.reference_number,
+            transactionId: order.id,
+            createdAt: order.created_at,
+            updatedAt: order.updated_at,
+            metadata: {
+                sellerId: order.seller_id,
+                items: order.items
+            }
+        }));
+
+        // Apply search filter if provided
+        if (search) {
+            const searchLower = search.toLowerCase();
+            payments = payments.filter(payment => 
+                payment._id.toLowerCase().includes(searchLower) ||
+                payment.orderId.toLowerCase().includes(searchLower) ||
+                payment.referenceNumber?.toLowerCase().includes(searchLower) ||
+                payment.transactionId?.toLowerCase().includes(searchLower)
+            );
+        }
+
+        res.json({ 
+            success: true, 
+            message: "Payments retrieved successfully.", 
+            data: payments,
+            total: count || 0,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil((count || 0) / limit)
+        });
+    } catch (error) {
+        console.error('Error fetching payments:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// Get payment statistics
+router.get('/payments/stats', asyncHandler(async (req, res) => {
+    try {
+        const { dateFrom, dateTo } = req.query;
+        
+        // Build query
+        let query = supabase.from('orders').select('*');
+        
+        // Date range filter
+        if (dateFrom || dateTo) {
+            if (dateFrom) query = query.gte('created_at', dateFrom);
+            if (dateTo) query = query.lte('created_at', dateTo);
+        }
+
+        const { data: orders, error } = await query;
+
+        if (error) {
+            throw new Error(`Failed to fetch orders: ${error.message}`);
+        }
+
+        // Calculate statistics
+        const totalTransactions = orders.length;
+        const totalRevenue = orders.reduce((sum, order) => sum + (order.total_price || 0), 0);
+        const successfulPayments = orders.filter(o => o.order_status === 'paid').length;
+        const pendingPayments = orders.filter(o => o.order_status === 'pending').length;
+        const failedPayments = orders.filter(o => o.order_status === 'cancelled').length;
+        const refundedPayments = orders.filter(o => o.order_status === 'refunded').length;
+        const disputedPayments = orders.filter(o => o.order_status === 'disputed').length;
+        
+        const averageTransactionValue = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
+        const successRate = totalTransactions > 0 ? (successfulPayments / totalTransactions) * 100 : 0;
+        const platformEarnings = totalRevenue * 0.05; // 5% platform fee
+        
+        // Payment method distribution
+        const paymentMethodDistribution = {};
+        orders.forEach(order => {
+            const method = order.payment_method || 'Unknown';
+            if (!paymentMethodDistribution[method]) {
+                paymentMethodDistribution[method] = { count: 0, amount: 0 };
+            }
+            paymentMethodDistribution[method].count++;
+            paymentMethodDistribution[method].amount += order.total_price || 0;
+        });
+
+        const stats = {
+            totalTransactions,
+            totalRevenue,
+            successfulPayments,
+            pendingPayments,
+            failedPayments,
+            refundedPayments,
+            disputedPayments,
+            averageTransactionValue,
+            successRate,
+            platformEarnings,
+            pendingPayouts: 0, // This would be calculated from seller payouts
+            paymentMethodDistribution
+        };
+
+        res.json({ 
+            success: true, 
+            message: "Payment statistics retrieved successfully.", 
+            data: stats 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// Get single payment by ID
+router.get('/payments/:id', asyncHandler(async (req, res) => {
+    try {
+        const paymentId = req.params.id;
+        
+        const { data: order, error } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('id', paymentId)
+            .single();
+
+        if (error) {
+            return res.status(404).json({ success: false, message: "Payment not found." });
+        }
+
+        // Transform order to payment format
+        const payment = {
+            _id: order.id,
+            orderId: order.id,
+            userId: order.user_id,
+            amount: order.total_price || 0,
+            currency: 'PHP',
+            paymentMethod: order.payment_method || 'Unknown',
+            status: order.order_status || 'pending',
+            referenceNumber: order.reference_number,
+            transactionId: order.id,
+            createdAt: order.created_at,
+            updatedAt: order.updated_at,
+            metadata: {
+                sellerId: order.seller_id,
+                items: order.items
+            }
+        };
+
+        res.json({ 
+            success: true, 
+            message: "Payment retrieved successfully.", 
+            data: payment 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// ============================================
+// END PAYMENT ROUTES
+// ============================================
+
+
 // Initialize OneSignal client (only if environment variables are set)
 let oneSignalClient = null;
 if (process.env.ONE_SIGNAL_APP_ID && process.env.ONE_SIGNAL_REST_API_KEY) {
@@ -94,8 +288,7 @@ async function sendRefundNotifications(order, amount, reason, adminId) {
 }
 
 // ============================================
-// CRITICAL: PAYMENT ROUTES MUST COME FIRST
-// These specific routes must be defined BEFORE any parameterized routes like /:id
+// PAYMENT ROUTES - MUST BE FIRST TO AVOID CONFLICTS
 // ============================================
 
 // Get payments with filtering and pagination
