@@ -565,4 +565,129 @@ router.post('/bulk-action', asyncHandler(async (req, res) => {
     }
 }));
 
+// Resolve dispute for an order
+router.post('/:id/resolve-dispute', asyncHandler(async (req, res) => {
+    try {
+        const orderID = req.params.id;
+        const { resolution, adminId, notes } = req.body;
+        
+        if (!resolution) {
+            return res.status(400).json({ success: false, message: "Resolution decision is required." });
+        }
+
+        // Find the order first
+        const order = await Order.findById(orderID);
+        if (!order) {
+            return res.status(404).json({ success: false, message: "Order not found." });
+        }
+
+        // Check if order is in disputed status
+        if (order.order_status !== 'disputed') {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Only orders with 'disputed' status can be resolved." 
+            });
+        }
+
+        // Update order status based on resolution
+        const newStatus = resolution === 'approve' ? 'completed' : 
+                         resolution === 'refund' ? 'refunded' : 
+                         'cancelled';
+        
+        const updatedOrder = await Order.updateStatus(orderID, newStatus);
+        
+        if (!updatedOrder) {
+            return res.status(500).json({ success: false, message: "Failed to update order status." });
+        }
+
+        // Log the dispute resolution for audit purposes
+        const disputeResolution = {
+            order_id: orderID,
+            resolution: resolution,
+            admin_id: adminId,
+            notes: notes || '',
+            resolved_at: new Date().toISOString()
+        };
+
+        // You might want to store this in a disputes_resolutions table
+        console.log('Dispute resolution:', disputeResolution);
+
+        res.json({ 
+            success: true, 
+            message: `Dispute resolved successfully with resolution: ${resolution}`, 
+            data: updatedOrder 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// Bulk action on payments
+router.post('/payments/bulk-action', asyncHandler(async (req, res) => {
+    try {
+        const { paymentIds, action, data } = req.body;
+        
+        if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0) {
+            return res.status(400).json({ success: false, message: "Payment IDs are required." });
+        }
+        
+        if (!action) {
+            return res.status(400).json({ success: false, message: "Action is required." });
+        }
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        // Process each payment based on the action
+        for (const paymentId of paymentIds) {
+            try {
+                // Find the order associated with this payment
+                const order = await Order.findByPaymentId(paymentId);
+                
+                if (!order) {
+                    results.failed.push({ id: paymentId, reason: "No order found for this payment" });
+                    continue;
+                }
+
+                switch (action) {
+                    case 'mark_paid':
+                        await Order.updateStatus(order.id, 'paid');
+                        results.success.push(paymentId);
+                        break;
+                        
+                    case 'refund':
+                        if (!data?.amount) {
+                            results.failed.push({ id: paymentId, reason: "Amount is required for refund action" });
+                            continue;
+                        }
+                        // Process refund logic here
+                        await Order.updateStatus(order.id, 'refunded');
+                        results.success.push(paymentId);
+                        break;
+                        
+                    case 'cancel':
+                        await Order.updateStatus(order.id, 'cancelled');
+                        results.success.push(paymentId);
+                        break;
+                        
+                    default:
+                        results.failed.push({ id: paymentId, reason: `Unknown action: ${action}` });
+                }
+            } catch (error) {
+                results.failed.push({ id: paymentId, reason: error.message });
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            message: `Bulk payment action '${action}' completed with ${results.success.length} successful and ${results.failed.length} failed operations.`, 
+            data: results 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
 module.exports = router;
