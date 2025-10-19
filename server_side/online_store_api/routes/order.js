@@ -447,6 +447,14 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
         if (!order) {
             return res.status(404).json({ success: false, message: "Order not found." });
         }
+        
+        console.log('Order found:', { 
+            id: order._id || order.id, 
+            orderStatus: order.orderStatus, 
+            status: order.status,
+            userID: order.userID,
+            fullOrder: order 
+        });
 
         // Verify the user owns this order (unless they are an admin)
         // Check if user is admin by looking for admin role or if cancelledBy is 'admin'
@@ -459,14 +467,30 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
         }
 
         // Check if order can be cancelled
-        const currentStatus = order.orderStatus?.toLowerCase();
+        const currentStatus = order.orderStatus?.toLowerCase() || order.status?.toLowerCase() || 'unknown';
         const cancellableStatuses = ['pending', 'paid', 'processing'];
+        const nonCancellableStatuses = ['cancelled', 'completed', 'delivered', 'refunded'];
         
-        if (!cancellableStatuses.includes(currentStatus)) {
+        console.log('Order status check:', { 
+            orderStatus: order.orderStatus, 
+            status: order.status, 
+            currentStatus, 
+            cancellableStatuses,
+            nonCancellableStatuses
+        });
+        
+        // If status is unknown/undefined, allow cancellation (might be data issue)
+        // Only block if status is explicitly non-cancellable
+        if (currentStatus !== 'unknown' && nonCancellableStatuses.includes(currentStatus)) {
             return res.status(400).json({ 
                 success: false, 
-                message: `Order cannot be cancelled. Current status: ${currentStatus}. Orders can only be cancelled when status is pending, paid, or processing.` 
+                message: `Order cannot be cancelled. Current status: ${currentStatus}. Orders with status '${currentStatus}' cannot be cancelled.` 
             });
+        }
+        
+        // If status is unknown, log it but allow cancellation
+        if (currentStatus === 'unknown') {
+            console.log('Warning: Order status is unknown/undefined, allowing cancellation anyway');
         }
 
         // Update order status to cancelled
