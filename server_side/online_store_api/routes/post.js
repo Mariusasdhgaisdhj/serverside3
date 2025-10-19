@@ -39,51 +39,7 @@ async function uploadToSupabase(file, bucket = process.env.SUPABASE_POSTS_BUCKET
   }
 }
 
-router.post('/:postId/delete', asyncHandler(async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const post = await Post.findById(postId);
-    
-    if (!post) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Post not found' 
-      });
-    }
-    
-    // Delete via Supabase (handles RLS)
-    const { data: deletedPost, error } = await supabase
-      .from('posts')
-      .delete()
-      .eq('id', postId)
-      .select()
-      .single();
-    
-    if (error) {
-      console.error('Supabase delete error:', error);
-      throw new Error(`Failed to delete post: ${error.message}`);
-    }
-    
-    // Optionally, delete associated comments/views (if needed)
-    // await supabase.from('comments').delete().eq('post_id', postId);
-    // await supabase.from('post_views').delete().eq('post_id', postId);
-    
-    res.json({ 
-      success: true, 
-      message: 'Post deleted successfully',
-      data: deletedPost 
-    });
-  } catch (error) {
-    console.error('Error deleting post:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to delete post', 
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-}));
-
-// list posts
+// List posts
 router.get('/', asyncHandler(async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -98,6 +54,7 @@ router.get('/', asyncHandler(async (req, res) => {
       isPinned: p.is_pinned,
       isLocked: p.is_locked,
       isHidden: p.is_hidden,
+      isFlagged: p.is_flagged,
     }));
 
     res.json({ 
@@ -118,7 +75,7 @@ router.get('/', asyncHandler(async (req, res) => {
   }
 }));
 
-// create post
+// Create post
 router.post('/', asyncHandler(async (req, res) => {
   try {
     // Support optional image via multipart (field: img)
@@ -223,18 +180,20 @@ router.post('/', asyncHandler(async (req, res) => {
   }
 }));
 
-// update post
+// Update post - FIXED typo
 router.put('/:postId', asyncHandler(async (req, res) => {
   try {
     const { postId } = req.params;
     const { title, content, category } = req.body || {};
+    
     if (!title && !content && !category) {
       return res.status(400).json({ success: false, message: 'Nothing to update' });
     }
+    
     const updateData = {};
     if (title) updateData.title = String(title).trim();
     if (content) updateData.content = String(content).trim();
-    if (category) updateData.updateData.category = String(category).trim();
+    if (category) updateData.category = String(category).trim(); // FIXED: was updateData.updateData.category
     updateData.updated_at = new Date().toISOString();
 
     const updated = await Post.update(postId, updateData);
@@ -247,7 +206,98 @@ router.put('/:postId', asyncHandler(async (req, res) => {
   }
 }));
 
-// add comment
+// Delete post
+router.post('/:postId/delete', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Post not found' 
+      });
+    }
+    
+    // Delete via Supabase (handles RLS)
+    const { data: deletedPost, error } = await supabase
+      .from('posts')
+      .delete()
+      .eq('id', postId)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Supabase delete error:', error);
+      throw new Error(`Failed to delete post: ${error.message}`);
+    }
+    
+    // Optionally, delete associated comments/views (if needed)
+    await supabase.from('comments').delete().eq('post_id', postId);
+    
+    res.json({ 
+      success: true, 
+      message: 'Post deleted successfully',
+      data: deletedPost 
+    });
+  } catch (error) {
+    console.error('Error deleting post:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to delete post', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
+// ==================== COMMENT ROUTES ====================
+
+// Get comments for a post - NEW
+router.get('/:postId/comments', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    
+    // Check if post exists
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+    
+    // Fetch comments with user information
+    const { data: comments, error } = await supabase
+      .from('comments')
+      .select(`
+        *,
+        users:user_id (
+          id,
+          name,
+          email
+        )
+      `)
+      .eq('post_id', postId)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching comments:', error);
+      throw error;
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Comments fetched successfully', 
+      data: comments || []
+    });
+  } catch (error) {
+    console.error('Error fetching comments:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch comments', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
+// Add comment
 router.post('/:postId/comments', asyncHandler(async (req, res) => {
   try {
     const { postId } = req.params;
@@ -281,7 +331,7 @@ router.post('/:postId/comments', asyncHandler(async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
     
-    // Create the comment (assuming Comment model handles insert with post_id and user_id)
+    // Create the comment
     const newComment = await Comment.create({
       post_id: postId,
       user_id: userId,
@@ -303,7 +353,103 @@ router.post('/:postId/comments', asyncHandler(async (req, res) => {
   }
 }));
 
-// Pin/Unpin a post
+// Delete comment - NEW
+router.delete('/comments/:commentId', asyncHandler(async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    
+    // Check if comment exists
+    const { data: comment, error: fetchError } = await supabase
+      .from('comments')
+      .select('*')
+      .eq('id', commentId)
+      .single();
+    
+    if (fetchError || !comment) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Comment not found' 
+      });
+    }
+    
+    // Delete the comment
+    const { error: deleteError } = await supabase
+      .from('comments')
+      .delete()
+      .eq('id', commentId);
+    
+    if (deleteError) {
+      console.error('Error deleting comment:', deleteError);
+      throw deleteError;
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Comment deleted successfully' 
+    });
+  } catch (error) {
+    console.error('Error deleting comment:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to delete comment', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
+// Flag comment - NEW
+router.post('/comments/:commentId/flag', asyncHandler(async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    
+    // Check if comment exists
+    const { data: comment, error: fetchError } = await supabase
+      .from('comments')
+      .select('*')
+      .eq('id', commentId)
+      .single();
+    
+    if (fetchError || !comment) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Comment not found' 
+      });
+    }
+    
+    // Toggle flag status
+    const { data: updated, error: updateError } = await supabase
+      .from('comments')
+      .update({ 
+        is_flagged: !comment.is_flagged,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', commentId)
+      .select()
+      .single();
+    
+    if (updateError) {
+      console.error('Error flagging comment:', updateError);
+      throw updateError;
+    }
+    
+    res.json({ 
+      success: true, 
+      message: updated.is_flagged ? 'Comment flagged successfully' : 'Comment unflagged successfully',
+      data: updated
+    });
+  } catch (error) {
+    console.error('Error flagging comment:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to flag comment', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
+// ==================== POST MODERATION ROUTES ====================
+
+// Pin/Unpin post
 router.post('/:postId/pin', asyncHandler(async (req, res) => {
   try {
     const { postId } = req.params;
@@ -314,26 +460,56 @@ router.post('/:postId/pin', asyncHandler(async (req, res) => {
     }
     
     const updated = await Post.update(postId, { 
-      is_pinned: !post.is_pinned, // Toggle pin status
+      is_pinned: true,
       updated_at: new Date().toISOString()
     });
     
     res.json({ 
       success: true, 
-      message: post.is_pinned ? 'Post unpinned successfully' : 'Post pinned successfully',
+      message: 'Post pinned successfully',
       data: updated
     });
   } catch (error) {
-    console.error('Error pinning/unpinning post:', error);
+    console.error('Error pinning post:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Failed to pin/unpin post', 
+      message: 'Failed to pin post', 
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 }));
 
-// Lock a post
+// Unpin post - NEW
+router.post('/:postId/unpin', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+    
+    const updated = await Post.update(postId, { 
+      is_pinned: false,
+      updated_at: new Date().toISOString()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Post unpinned successfully',
+      data: updated
+    });
+  } catch (error) {
+    console.error('Error unpinning post:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to unpin post', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
+// Lock post
 router.post('/:postId/lock', asyncHandler(async (req, res) => {
   try {
     const { postId } = req.params;
@@ -344,26 +520,56 @@ router.post('/:postId/lock', asyncHandler(async (req, res) => {
     }
     
     const updated = await Post.update(postId, { 
-      is_locked: !post.is_locked, // Toggle lock status
+      is_locked: true,
       updated_at: new Date().toISOString()
     });
     
     res.json({ 
       success: true, 
-      message: post.is_locked ? 'Post unlocked successfully' : 'Post locked successfully',
+      message: 'Post locked successfully',
       data: updated
     });
   } catch (error) {
-    console.error('Error locking/unlocking post:', error);
+    console.error('Error locking post:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Failed to lock/unlock post', 
+      message: 'Failed to lock post', 
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 }));
 
-// Hide a post
+// Unlock post - NEW
+router.post('/:postId/unlock', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+    
+    const updated = await Post.update(postId, { 
+      is_locked: false,
+      updated_at: new Date().toISOString()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Post unlocked successfully',
+      data: updated
+    });
+  } catch (error) {
+    console.error('Error unlocking post:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to unlock post', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
+// Hide post
 router.post('/:postId/hide', asyncHandler(async (req, res) => {
   try {
     const { postId } = req.params;
@@ -374,26 +580,56 @@ router.post('/:postId/hide', asyncHandler(async (req, res) => {
     }
     
     const updated = await Post.update(postId, { 
-      is_hidden: !post.is_hidden, // Toggle hidden status
+      is_hidden: true,
       updated_at: new Date().toISOString()
     });
     
     res.json({ 
       success: true, 
-      message: post.is_hidden ? 'Post unhidden successfully' : 'Post hidden successfully',
+      message: 'Post hidden successfully',
       data: updated
     });
   } catch (error) {
-    console.error('Error hiding/unhiding post:', error);
+    console.error('Error hiding post:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Failed to hide/unhide post', 
+      message: 'Failed to hide post', 
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 }));
 
-// Moderate a post
+// Show post - NEW
+router.post('/:postId/show', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+    
+    const updated = await Post.update(postId, { 
+      is_hidden: false,
+      updated_at: new Date().toISOString()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Post shown successfully',
+      data: updated
+    });
+  } catch (error) {
+    console.error('Error showing post:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to show post', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
+// Moderate post
 router.post('/:postId/moderate', asyncHandler(async (req, res) => {
   try {
     const { postId } = req.params;
@@ -410,7 +646,6 @@ router.post('/:postId/moderate', asyncHandler(async (req, res) => {
     
     const updateData = {
       updated_at: new Date().toISOString()
-      // FIX: Removed moderation_reason (schema lacks this column)
     };
     
     // Apply the requested action
@@ -470,6 +705,7 @@ router.post('/bulk-action', asyncHandler(async (req, res) => {
       case 'hide':
         updateData.is_hidden = true;
         break;
+      case 'show':
       case 'unhide':
         updateData.is_hidden = false;
         break;
@@ -477,20 +713,28 @@ router.post('/bulk-action', asyncHandler(async (req, res) => {
         updateData.is_flagged = true;
         break;
       case 'unflag':
+      case 'approve':
         updateData.is_flagged = false;
         break;
       case 'delete':
+      case 'archive':
         // Handle bulk deletion
-        const { count, error: delError } = await supabase
+        const { error: delError } = await supabase
           .from('posts')
           .delete()
           .in('id', postIds);
           
         if (delError) throw delError;
         
+        // Also delete associated comments
+        await supabase
+          .from('comments')
+          .delete()
+          .in('post_id', postIds);
+        
         return res.json({ 
           success: true, 
-          message: `${count} posts deleted successfully` 
+          message: `${postIds.length} posts deleted successfully` 
         });
       default:
         return res.status(400).json({ 
