@@ -87,11 +87,20 @@ router.get('/', asyncHandler(async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     
     const result = await Post.findAll(page, limit);
-    
+
+    // Normalize for frontend: add camelCase mirrors
+    const normalized = (result.data || []).map((p) => ({
+      ...p,
+      imageUrl: p.image_url || null,
+      isPinned: p.is_pinned,
+      isLocked: p.is_locked,
+      isHidden: p.is_hidden,
+    }));
+
     res.json({ 
       success: true, 
       message: 'Posts fetched successfully', 
-      data: result.data,
+      data: normalized,
       total: result.total,
       page: page,
       limit: limit
@@ -193,10 +202,13 @@ router.post('/', asyncHandler(async (req, res) => {
       image_url: imageUrl
     });
     
+    // Add camelCase mirrors on response
+    const postNormalized = post ? { ...post, imageUrl: post.image_url || null } : post;
+
     res.json({ 
       success: true, 
       message: 'Post created successfully', 
-      data: post 
+      data: postNormalized 
     });
   } catch (error) {
     console.error('Error creating post:', error);
