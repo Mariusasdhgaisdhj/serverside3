@@ -448,8 +448,13 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
             return res.status(404).json({ success: false, message: "Order not found." });
         }
 
-        // Verify the user owns this order
-        if (!order.userID || order.userID.toString() !== userId) {
+        // Verify the user owns this order (unless they are an admin)
+        // Check if user is admin by looking for admin role or if cancelledBy is 'admin'
+        const isAdmin = cancelledBy === 'admin' || cancelledBy === 'Admin';
+        
+        console.log('Cancellation request:', { orderID, userId, cancelledBy, isAdmin, orderUserId: order.userID });
+        
+        if (!isAdmin && (!order.userID || order.userID.toString() !== userId)) {
             return res.status(403).json({ success: false, message: "You can only cancel your own orders." });
         }
 
