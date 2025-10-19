@@ -4,6 +4,35 @@ const Poster = require('../models/poster');
 const { uploadPosters } = require('../uploadFile');
 const multer = require('multer');
 const asyncHandler = require('express-async-handler');
+const { supabase } = require('../config/supabase');
+
+// Helper function to upload file to Supabase
+async function uploadToSupabase(file, bucket = 'posters') {
+  try {
+    const fileName = `${Date.now()}_${file.originalname}`;
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(fileName, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false
+      });
+
+    if (error) {
+      console.error('Supabase upload error:', error);
+      throw new Error(`Failed to upload file: ${error.message}`);
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(fileName);
+
+    return publicUrl;
+  } catch (error) {
+    console.error('Upload to Supabase failed:', error);
+    throw error;
+  }
+}
 
 // Get all posters
 router.get('/', asyncHandler(async (req, res) => {
@@ -43,15 +72,25 @@ router.post('/', asyncHandler(async (req, res) => {
                     err.message = 'File size is too large. Maximum filesize is 5MB.';
                 }
                 console.log(`Add poster: ${err}`);
-                return res.json({ success: false, message: err });
+                return res.json({ success: false, message: err.message });
             } else if (err) {
                 console.log(`Add poster: ${err}`);
-                return res.json({ success: false, message: err });
+                return res.json({ success: false, message: err.message });
             }
+            
             const { posterName } = req.body;
             let imageUrl = 'no_url';
+            
             if (req.file) {
-                imageUrl = `http://localhost:3000/image/poster/${req.file.filename}`;
+                try {
+                    imageUrl = await uploadToSupabase(req.file, 'posters');
+                } catch (uploadError) {
+                    console.error('File upload failed:', uploadError);
+                    return res.status(500).json({ 
+                        success: false, 
+                        message: "Failed to upload image. Please try again." 
+                    });
+                }
             }
 
             if (!posterName) {
@@ -69,9 +108,7 @@ router.post('/', asyncHandler(async (req, res) => {
                 console.error("Error creating Poster:", error);
                 res.status(500).json({ success: false, message: error.message });
             }
-
         });
-
     } catch (err) {
         console.log(`Error creating Poster: ${err.message}`);
         return res.status(500).json({ success: false, message: err.message });
@@ -97,9 +134,16 @@ router.put('/:id', asyncHandler(async (req, res) => {
             const { posterName } = req.body;
             let image = req.body.image;
 
-
             if (req.file) {
-                image = `http://localhost:3000/image/poster/${req.file.filename}`;
+                try {
+                    image = await uploadToSupabase(req.file, 'posters');
+                } catch (uploadError) {
+                    console.error('File upload failed:', uploadError);
+                    return res.status(500).json({ 
+                        success: false, 
+                        message: "Failed to upload image. Please try again." 
+                    });
+                }
             }
 
             if (!posterName || !image) {
@@ -115,9 +159,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
             } catch (error) {
                 res.status(500).json({ success: false, message: error.message });
             }
-
         });
-
     } catch (err) {
         console.log(`Error updating poster: ${err.message}`);
         return res.status(500).json({ success: false, message: err.message });
