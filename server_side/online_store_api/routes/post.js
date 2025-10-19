@@ -126,12 +126,28 @@ router.post('/', asyncHandler(async (req, res) => {
       imageUrl = String(req.body.imageUrl);
     }
     
+    // FIX: Parse tags to ensure it's a cleaned string (or null) for text column
+    let parsedTags = null;
+    if (tags) {
+      let tagArray;
+      if (Array.isArray(tags)) {
+        tagArray = tags;
+      } else if (typeof tags === 'string') {
+        tagArray = tags.split(',').map(t => t.trim()).filter(t => t.length > 0);
+      } else {
+        tagArray = [];
+      }
+      if (tagArray.length > 0) {
+        parsedTags = tagArray.join(',');
+      }
+    }
+    
     const post = await Post.create({ 
       user_id: userId, // Use user_id for Supabase
       title: title.trim(), 
       content: content.trim(),
       category: category || 'General',
-      tags: tags || [],
+      tags: parsedTags,  // Now always string or null
       image_url: imageUrl
     });
     
@@ -161,7 +177,7 @@ router.put('/:postId', asyncHandler(async (req, res) => {
     const updateData = {};
     if (title) updateData.title = String(title).trim();
     if (content) updateData.content = String(content).trim();
-    if (category) updateData.category = String(category).trim();
+    if (category) updateData.updateData.category = String(category).trim();
     updateData.updated_at = new Date().toISOString();
 
     const updated = await Post.update(postId, updateData);
@@ -199,59 +215,26 @@ router.post('/:postId/comments', asyncHandler(async (req, res) => {
     // Check if post exists
     const post = await Post.findById(postId);
     if (!post) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Post not found' 
-      });
+      return res.status(404).json({ success: false, message: 'Post not found' });
     }
     
     // Check if user exists
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
-      });
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
     
-    // Create comment
-    const comment = await Comment.create({ 
+    // Create the comment (assuming Comment model handles insert with post_id and user_id)
+    const newComment = await Comment.create({
       post_id: postId,
-      user_id: userId, 
-      content: content.trim() 
+      user_id: userId,
+      content: content.trim()
     });
-    
-    // Send push notification to post author (if not commenting on own post)
-    if (post.user_id !== userId) {
-      try {
-        // Get commenter's name for the notification
-        const commenter = await User.findById(userId);
-        const commenterName = commenter?.name || 'Someone';
-        
-        // Send notification via HTTP request to notification service
-        const fetch = require('node-fetch');
-        await fetch(`${process.env.BASE_URL || 'http://localhost:3000'}/notifications/comment`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'comment',
-            post_id: postId,
-            post_title: post.title,
-            commenter_id: userId,
-            post_author_id: post.user_id,
-            message: `${commenterName} commented on your post: "${post.title}"`,
-          })
-        });
-      } catch (notifError) {
-        console.log('Failed to send comment notification:', notifError);
-        // Don't fail the comment creation if notification fails
-      }
-    }
     
     res.json({ 
       success: true, 
       message: 'Comment added successfully', 
-      data: comment 
+      data: newComment 
     });
   } catch (error) {
     console.error('Error adding comment:', error);
@@ -263,185 +246,7 @@ router.post('/:postId/comments', asyncHandler(async (req, res) => {
   }
 }));
 
-// Get comments for a post
-router.get('/:postId/comments', asyncHandler(async (req, res) => {
-  try {
-    const { postId } = req.params;
-    
-    // Check if post exists
-    const post = await Post.findById(postId);
-    if (!post) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Post not found' 
-      });
-    }
-    
-    // Get comments for this post
-    const { data, error } = await supabase
-      .from('comments')
-      .select(`
-        *,
-        users:user_id(name, email)
-      `)
-      .eq('post_id', postId)
-      .order('created_at', { ascending: true });
-    
-    if (error) throw error;
-    
-    res.json({ 
-      success: true, 
-      message: 'Comments fetched successfully', 
-      data: data || []
-    });
-  } catch (error) {
-    console.error('Error fetching comments:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to fetch comments', 
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-}));
-
-// Get a single post with comments
-router.get('/:postId', asyncHandler(async (req, res) => {
-  try {
-    const { postId } = req.params;
-    
-    const post = await Post.findById(postId);
-    
-    if (!post) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Post not found' 
-      });
-    }
-    
-    res.json({ 
-      success: true, 
-      message: 'Post fetched successfully', 
-      data: post 
-    });
-  } catch (error) {
-    console.error('Error fetching post:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to fetch post', 
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-}));
-
-// Delete a post (only by the author)
-router.delete('/:postId', asyncHandler(async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const { userId } = req.body || {};
-    
-    if (!userId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'userId is required' 
-      });
-    }
-    
-    const post = await Post.findById(postId);
-    if (!post) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Post not found' 
-      });
-    }
-    
-    // Check if user is the author of the post
-    if (post.user_id !== userId) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'You can only delete your own posts' 
-      });
-    }
-    
-    await Post.delete(postId);
-    
-    res.json({ 
-      success: true, 
-      message: 'Post deleted successfully', 
-      data: null 
-    });
-  } catch (error) {
-    console.error('Error deleting post:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to delete post', 
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-}));
-
-// Alternative delete endpoint using POST (for frontend compatibility)
-router.post('/:postId/delete', asyncHandler(async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const { userId } = req.body || {};
-    
-    if (!userId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'userId is required' 
-      });
-    }
-    
-    const post = await Post.findById(postId);
-    if (!post) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Post not found' 
-      });
-    }
-    
-    // Check if user is the author of the post
-    if (post.user_id !== userId) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'You can only delete your own posts' 
-      });
-    }
-    
-    await Post.delete(postId);
-    
-    res.json({ 
-      success: true, 
-      message: 'Post deleted successfully', 
-      data: null 
-    });
-  } catch (error) {
-    console.error('Error deleting post:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to delete post', 
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-}));
-
-// Delete a single comment
-router.delete('/comments/:commentId', asyncHandler(async (req, res) => {
-  try {
-    const { commentId } = req.params;
-    const { error } = await supabase
-      .from('comments')
-      .delete()
-      .eq('id', commentId);
-    if (error) throw error;
-    res.json({ success: true, message: 'Comment deleted' });
-  } catch (error) {
-    console.error('Error deleting comment:', error);
-    res.status(500).json({ success: false, message: 'Failed to delete comment' });
-  }
-}));
-
-// Pin a post
+// Pin/Unpin a post
 router.post('/:postId/pin', asyncHandler(async (req, res) => {
   try {
     const { postId } = req.params;
@@ -547,8 +352,8 @@ router.post('/:postId/moderate', asyncHandler(async (req, res) => {
     }
     
     const updateData = {
-      updated_at: new Date().toISOString(),
-      moderation_reason: reason || null
+      updated_at: new Date().toISOString()
+      // FIX: Removed moderation_reason (schema lacks this column)
     };
     
     // Apply the requested action
@@ -556,7 +361,6 @@ router.post('/:postId/moderate', asyncHandler(async (req, res) => {
       updateData.is_flagged = true;
     } else if (action === 'unflag') {
       updateData.is_flagged = false;
-      updateData.moderation_reason = null;
     }
     
     const updated = await Post.update(postId, updateData);
@@ -620,12 +424,12 @@ router.post('/bulk-action', asyncHandler(async (req, res) => {
         break;
       case 'delete':
         // Handle bulk deletion
-        const { count, error } = await supabase
+        const { count, error: delError } = await supabase
           .from('posts')
           .delete()
           .in('id', postIds);
           
-        if (error) throw error;
+        if (delError) throw delError;
         
         return res.json({ 
           success: true, 
@@ -639,12 +443,12 @@ router.post('/bulk-action', asyncHandler(async (req, res) => {
     }
     
     // Update all posts with the specified IDs
-    const { error } = await supabase
+    const { error: updateError } = await supabase
       .from('posts')
       .update(updateData)
       .in('id', postIds);
       
-    if (error) throw error;
+    if (updateError) throw updateError;
     
     res.json({ 
       success: true, 
@@ -661,5 +465,3 @@ router.post('/bulk-action', asyncHandler(async (req, res) => {
 }));
 
 module.exports = router;
-
-
