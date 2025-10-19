@@ -3,27 +3,19 @@ const asyncHandler = require('express-async-handler');
 const router = express.Router();
 const Order = require('../models/order');
 const OneSignal = require('onesignal-node');
-const nodemailer = require('nodemailer');
 const dotenv = require('dotenv');
 dotenv.config();
 
-// Initialize OneSignal client
-const oneSignalClient = new OneSignal.Client(process.env.ONE_SIGNAL_APP_ID, process.env.ONE_SIGNAL_REST_API_KEY);
+// Initialize OneSignal client (only if environment variables are set)
+let oneSignalClient = null;
+if (process.env.ONE_SIGNAL_APP_ID && process.env.ONE_SIGNAL_REST_API_KEY) {
+    oneSignalClient = new OneSignal.Client(process.env.ONE_SIGNAL_APP_ID, process.env.ONE_SIGNAL_REST_API_KEY);
+}
 
-// Initialize email transporter
-const emailTransporter = nodemailer.createTransport({
-    service: 'gmail', // or your preferred email service
-    auth: {
-        user: process.env.EMAIL_USER, // Your email
-        pass: process.env.EMAIL_PASSWORD // Your email password or app password
-    }
-});
-
-// Function to send cancellation notifications
+// Function to send cancellation push notifications
 async function sendCancellationNotifications(order, reason, cancelledBy) {
     const orderId = order._id || order.id;
     const buyerName = order.userID?.name || 'Customer';
-    const buyerEmail = order.userID?.email;
     const orderTotal = order.totalPrice || 0;
     
     // Prepare notification content
@@ -31,108 +23,39 @@ async function sendCancellationNotifications(order, reason, cancelledBy) {
     const notificationMessage = `Your order #${orderId.slice(0, 8)} has been cancelled. Reason: ${reason}`;
     
     // 1. Send Push Notification via OneSignal
-    try {
-        const pushNotification = {
-            contents: { 'en': notificationMessage },
-            headings: { 'en': notificationTitle },
-            included_segments: ['All'], // You can target specific users if you have their player IDs
-            data: {
-                type: 'order_cancelled',
-                order_id: orderId,
-                reason: reason,
-                cancelled_by: cancelledBy || 'admin',
-                total_amount: orderTotal
-            },
-            // Optional: Add sound and priority
-            sound: 'default',
-            priority: 10
-        };
-        
-        const pushResponse = await oneSignalClient.createNotification(pushNotification);
-        console.log('Push notification sent:', pushResponse.body.id);
-    } catch (pushError) {
-        console.error('Failed to send push notification:', pushError);
-    }
-    
-    // 2. Send Email Notification
-    if (buyerEmail) {
+    if (oneSignalClient) {
         try {
-            const emailHtml = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="utf-8">
-                    <title>Order Cancelled</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                        .header { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-                        .content { background: white; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
-                        .order-details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
-                        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
-                        .button { display: inline-block; background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 10px 0; }
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <div class="header">
-                            <h1>Order Cancelled</h1>
-                            <p>We're sorry to inform you that your order has been cancelled.</p>
-                        </div>
-                        
-                        <div class="content">
-                            <h2>Order Details</h2>
-                            <div class="order-details">
-                                <p><strong>Order ID:</strong> #${orderId}</p>
-                                <p><strong>Order Total:</strong> ₱${orderTotal.toLocaleString()}</p>
-                                <p><strong>Cancellation Reason:</strong> ${reason}</p>
-                                <p><strong>Cancelled By:</strong> ${cancelledBy || 'Admin'}</p>
-                                <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-                            </div>
-                            
-                            <h3>What happens next?</h3>
-                            <ul>
-                                <li>If payment was made, you will receive a refund within 3-5 business days</li>
-                                <li>You can place a new order anytime</li>
-                                <li>Contact our support team if you have any questions</li>
-                            </ul>
-                            
-                            <p>We apologize for any inconvenience caused.</p>
-                            
-                            <a href="${process.env.FRONTEND_URL || 'https://yourapp.com'}" class="button">Visit Our Store</a>
-                        </div>
-                        
-                        <div class="footer">
-                            <p>Thank you for choosing our service!</p>
-                            <p>If you have any questions, please contact our support team.</p>
-                        </div>
-                    </div>
-                </body>
-                </html>
-            `;
-            
-            const mailOptions = {
-                from: `"${process.env.APP_NAME || 'AgriReady'}" <${process.env.EMAIL_USER}>`,
-                to: buyerEmail,
-                subject: `Order #${orderId.slice(0, 8)} Cancelled - ${process.env.APP_NAME || 'AgriReady'}`,
-                html: emailHtml
+            const pushNotification = {
+                contents: { 'en': notificationMessage },
+                headings: { 'en': notificationTitle },
+                included_segments: ['All'], // You can target specific users if you have their player IDs
+                data: {
+                    type: 'order_cancelled',
+                    order_id: orderId,
+                    reason: reason,
+                    cancelled_by: cancelledBy || 'admin',
+                    total_amount: orderTotal
+                },
+                // Optional: Add sound and priority
+                sound: 'default',
+                priority: 10
             };
             
-            await emailTransporter.sendMail(mailOptions);
-            console.log('Email notification sent to:', buyerEmail);
-        } catch (emailError) {
-            console.error('Failed to send email notification:', emailError);
+            const pushResponse = await oneSignalClient.createNotification(pushNotification);
+            console.log('Push notification sent:', pushResponse.body.id);
+        } catch (pushError) {
+            console.error('Failed to send push notification:', pushError);
         }
     } else {
-        console.log('No email address found for buyer, skipping email notification');
+        console.log('OneSignal client not initialized, skipping push notification');
     }
+    
 }
 
-// Function to send refund notifications
+// Function to send refund push notifications
 async function sendRefundNotifications(order, amount, reason, adminId) {
     const orderId = order._id || order.id;
     const buyerName = order.userID?.name || 'Customer';
-    const buyerEmail = order.userID?.email;
     const orderTotal = order.totalPrice || 0;
     
     // Prepare notification content
@@ -140,101 +63,33 @@ async function sendRefundNotifications(order, amount, reason, adminId) {
     const notificationMessage = `Your refund of ₱${parseFloat(amount).toLocaleString()} for order #${orderId.slice(0, 8)} has been processed.`;
     
     // 1. Send Push Notification via OneSignal
-    try {
-        const pushNotification = {
-            contents: { 'en': notificationMessage },
-            headings: { 'en': notificationTitle },
-            included_segments: ['All'],
-            data: {
-                type: 'order_refunded',
-                order_id: orderId,
-                refund_amount: amount,
-                reason: reason,
-                admin_id: adminId,
-                total_amount: orderTotal
-            },
-            sound: 'default',
-            priority: 10
-        };
-        
-        const pushResponse = await oneSignalClient.createNotification(pushNotification);
-        console.log('Refund push notification sent:', pushResponse.body.id);
-    } catch (pushError) {
-        console.error('Failed to send refund push notification:', pushError);
-    }
-    
-    // 2. Send Email Notification
-    if (buyerEmail) {
+    if (oneSignalClient) {
         try {
-            const emailHtml = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="utf-8">
-                    <title>Refund Processed</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                        .header { background: #e8f5e8; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-                        .content { background: white; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
-                        .refund-details { background: #f0f8f0; padding: 15px; border-radius: 5px; margin: 15px 0; }
-                        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
-                        .button { display: inline-block; background: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 10px 0; }
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <div class="header">
-                            <h1>Refund Processed</h1>
-                            <p>Great news! Your refund has been processed successfully.</p>
-                        </div>
-                        
-                        <div class="content">
-                            <h2>Refund Details</h2>
-                            <div class="refund-details">
-                                <p><strong>Order ID:</strong> #${orderId}</p>
-                                <p><strong>Refund Amount:</strong> ₱${parseFloat(amount).toLocaleString()}</p>
-                                <p><strong>Reason:</strong> ${reason || 'Admin initiated refund'}</p>
-                                <p><strong>Processed By:</strong> ${adminId || 'Admin'}</p>
-                                <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-                            </div>
-                            
-                            <h3>What happens next?</h3>
-                            <ul>
-                                <li>Your refund will be credited to your original payment method within 3-5 business days</li>
-                                <li>You will receive a confirmation email from your payment provider</li>
-                                <li>You can place a new order anytime</li>
-                            </ul>
-                            
-                            <p>Thank you for your patience and understanding.</p>
-                            
-                            <a href="${process.env.FRONTEND_URL || 'https://yourapp.com'}" class="button">Shop Again</a>
-                        </div>
-                        
-                        <div class="footer">
-                            <p>Thank you for choosing our service!</p>
-                            <p>If you have any questions, please contact our support team.</p>
-                        </div>
-                    </div>
-                </body>
-                </html>
-            `;
-            
-            const mailOptions = {
-                from: `"${process.env.APP_NAME || 'AgriReady'}" <${process.env.EMAIL_USER}>`,
-                to: buyerEmail,
-                subject: `Refund Processed - Order #${orderId.slice(0, 8)} - ${process.env.APP_NAME || 'AgriReady'}`,
-                html: emailHtml
+            const pushNotification = {
+                contents: { 'en': notificationMessage },
+                headings: { 'en': notificationTitle },
+                included_segments: ['All'],
+                data: {
+                    type: 'order_refunded',
+                    order_id: orderId,
+                    refund_amount: amount,
+                    reason: reason,
+                    admin_id: adminId,
+                    total_amount: orderTotal
+                },
+                sound: 'default',
+                priority: 10
             };
             
-            await emailTransporter.sendMail(mailOptions);
-            console.log('Refund email notification sent to:', buyerEmail);
-        } catch (emailError) {
-            console.error('Failed to send refund email notification:', emailError);
+            const pushResponse = await oneSignalClient.createNotification(pushNotification);
+            console.log('Refund push notification sent:', pushResponse.body.id);
+        } catch (pushError) {
+            console.error('Failed to send refund push notification:', pushError);
         }
     } else {
-        console.log('No email address found for buyer, skipping refund email notification');
+        console.log('OneSignal client not initialized, skipping refund push notification');
     }
+    
 }
 
 // Get all orders (Supabase)
@@ -594,7 +449,7 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
         }
 
         // Verify the user owns this order
-        if (order.userID.toString() !== userId) {
+        if (!order.userID || order.userID.toString() !== userId) {
             return res.status(403).json({ success: false, message: "You can only cancel your own orders." });
         }
 
@@ -619,9 +474,14 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
         // Log the cancellation for audit purposes
         console.log(`Order ${orderID} cancelled by ${cancelledBy || 'buyer'}. Reason: ${reason}`);
 
-        // Send notifications to buyer (both push and email)
+        // Send push notification to buyer
         try {
-            await sendCancellationNotifications(order, reason, cancelledBy);
+            // Only send notifications if OneSignal environment variables are configured
+            if (process.env.ONE_SIGNAL_APP_ID && process.env.ONE_SIGNAL_REST_API_KEY) {
+                await sendCancellationNotifications(order, reason, cancelledBy);
+            } else {
+                console.log('OneSignal environment variables not configured, skipping push notifications');
+            }
         } catch (notifError) {
             console.error('Failed to send cancellation notifications:', notifError);
             // Don't fail the cancellation if notifications fail
@@ -691,9 +551,14 @@ router.post('/:id/refund', asyncHandler(async (req, res) => {
             return res.status(500).json({ success: false, message: "Failed to update order status." });
         }
 
-        // Send refund notifications to buyer
+        // Send refund push notification to buyer
         try {
-            await sendRefundNotifications(order, amount, reason, adminId);
+            // Only send notifications if OneSignal environment variables are configured
+            if (process.env.ONE_SIGNAL_APP_ID && process.env.ONE_SIGNAL_REST_API_KEY) {
+                await sendRefundNotifications(order, amount, reason, adminId);
+            } else {
+                console.log('OneSignal environment variables not configured, skipping refund push notifications');
+            }
         } catch (notifError) {
             console.error('Failed to send refund notifications:', notifError);
             // Don't fail the refund if notifications fail
