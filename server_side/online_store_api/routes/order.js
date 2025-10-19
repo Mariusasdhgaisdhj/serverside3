@@ -11,7 +11,7 @@ dotenv.config();
 const oneSignalClient = new OneSignal.Client(process.env.ONE_SIGNAL_APP_ID, process.env.ONE_SIGNAL_REST_API_KEY);
 
 // Initialize email transporter
-const emailTransporter = nodemailer.createTransporter({
+const emailTransporter = nodemailer.createTransport({
     service: 'gmail', // or your preferred email service
     auth: {
         user: process.env.EMAIL_USER, // Your email
