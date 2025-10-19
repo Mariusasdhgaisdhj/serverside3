@@ -10,7 +10,8 @@ const { supabase } = require('../config/supabase');
 // Helper function to upload file to Supabase
 async function uploadToSupabase(file, bucket = process.env.SUPABASE_POSTS_BUCKET || 'product-images') {
   try {
-    const fileName = `${Date.now()}_${file.originalname}`;
+    const safeName = `${Date.now()}_${(file.originalname || 'image').replace(/\s+/g, '_')}`;
+    const fileName = `posts/${safeName}`; // keep forum uploads under posts/
     const { data, error } = await supabase.storage
       .from(bucket)
       .upload(fileName, file.buffer, {
@@ -19,7 +20,7 @@ async function uploadToSupabase(file, bucket = process.env.SUPABASE_POSTS_BUCKET
       });
 
     if (error) {
-      console.error('Supabase upload error:', error);
+      console.error('Supabase upload error:', { bucket, error });
       throw new Error(`Failed to upload file: ${error.message}`);
     }
 
