@@ -88,6 +88,316 @@ router.get('/sellers', asyncHandler(async (req, res) => {
     }
 }));
 
+// Debug endpoint to check all users and their roles
+router.get('/debug-all-users', asyncHandler(async (req, res) => {
+    try {
+        const { data: allUsers } = await User.findAll(1, 1000);
+        
+        const usersByRole = {
+            buyer: allUsers.filter(u => u.role === 'buyer'),
+            seller: allUsers.filter(u => u.role === 'seller'),
+            admin: allUsers.filter(u => u.role === 'admin')
+        };
+        
+        res.json({
+            success: true,
+            message: "All users retrieved successfully",
+            data: {
+                total: allUsers.length,
+                byRole: {
+                    buyers: usersByRole.buyer.length,
+                    sellers: usersByRole.seller.length,
+                    admins: usersByRole.admin.length
+                },
+                sellers: usersByRole.seller.map(seller => ({
+                    id: seller.id,
+                    name: seller.name,
+                    email: seller.email,
+                    business_name: seller.business_name,
+                    latitude: seller.latitude,
+                    longitude: seller.longitude,
+                    addressinfo: seller.addressinfo
+                }))
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching all users:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch users",
+            error: error.message
+        });
+    }
+}));
+
+// Create sample sellers for testing (development only)
+router.post('/create-sample-sellers', asyncHandler(async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ success: false, message: 'Not available in production' });
+    }
+
+    try {
+        const sampleSellers = [
+            {
+                name: 'Juan Dela Cruz',
+                email: 'juan@example.com',
+                password: 'password123',
+                role: 'seller',
+                business_name: 'Davao Organic Farm',
+                latitude: 7.1907,
+                longitude: 125.4553,
+                phone: '+63 912 345 6789',
+                addressinfo: {
+                    address: 'Davao City, Philippines',
+                    latitude: 7.1907,
+                    longitude: 125.4553,
+                    products: ['Rice', 'Vegetables', 'Fruits']
+                }
+            },
+            {
+                name: 'Maria Santos',
+                email: 'maria@example.com',
+                password: 'password123',
+                role: 'seller',
+                business_name: 'Cagayan Valley Produce',
+                latitude: 8.4542,
+                longitude: 124.6319,
+                phone: '+63 917 123 4567',
+                addressinfo: {
+                    address: 'Cagayan de Oro, Philippines',
+                    latitude: 8.4542,
+                    longitude: 124.6319,
+                    products: ['Corn', 'Bananas', 'Coconut']
+                }
+            },
+            {
+                name: 'Pedro Garcia',
+                email: 'pedro@example.com',
+                password: 'password123',
+                role: 'seller',
+                business_name: 'Zamboanga Farm Supply',
+                latitude: 6.9214,
+                longitude: 122.0790,
+                phone: '+63 918 987 6543',
+                addressinfo: {
+                    address: 'Zamboanga City, Philippines',
+                    latitude: 6.9214,
+                    longitude: 122.0790,
+                    products: ['Seeds', 'Fertilizers', 'Tools']
+                }
+            },
+            {
+                name: 'Ana Rodriguez',
+                email: 'ana@example.com',
+                password: 'password123',
+                role: 'seller',
+                business_name: 'General Santos Fish Market',
+                latitude: 6.1167,
+                longitude: 125.1667,
+                phone: '+63 919 456 7890',
+                addressinfo: {
+                    address: 'General Santos City, Philippines',
+                    latitude: 6.1167,
+                    longitude: 125.1667,
+                    products: ['Fish', 'Seafood', 'Aquaculture']
+                }
+            },
+            {
+                name: 'Carlos Mendoza',
+                email: 'carlos@example.com',
+                password: 'password123',
+                role: 'seller',
+                business_name: 'Cotabato Rice Mill',
+                latitude: 7.2167,
+                longitude: 124.2500,
+                phone: '+63 920 111 2222',
+                addressinfo: {
+                    address: 'Cotabato City, Philippines',
+                    latitude: 7.2167,
+                    longitude: 124.2500,
+                    products: ['Rice', 'Grains', 'Milling Services']
+                }
+            }
+        ];
+
+        const createdSellers = [];
+        for (const sellerData of sampleSellers) {
+            try {
+                const seller = await User.create(sellerData);
+                createdSellers.push(seller);
+            } catch (error) {
+                console.log(`Failed to create seller ${sellerData.name}: ${error.message}`);
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            message: `Created ${createdSellers.length} sample sellers`, 
+            data: createdSellers 
+        });
+    } catch (error) {
+        console.error('Error creating sample sellers:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to create sample sellers.",
+            error: error.message
+        });
+    }
+}));
+
+// Quick test seller creation (development only)
+router.post('/create-test-seller', asyncHandler(async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ success: false, message: 'Not available in production' });
+    }
+
+    try {
+        const testSeller = {
+            name: 'Test Seller',
+            email: 'testseller@example.com',
+            password: 'password123',
+            role: 'seller',
+            business_name: 'Test Farm',
+            latitude: 7.1907,
+            longitude: 125.4553,
+            phone: '+63 912 345 6789',
+            addressinfo: {
+                address: 'Davao City, Philippines',
+                latitude: 7.1907,
+                longitude: 125.4553,
+                products: ['Rice', 'Vegetables']
+            }
+        };
+
+        const seller = await User.create(testSeller);
+        
+        res.json({ 
+            success: true, 
+            message: "Test seller created successfully", 
+            data: seller 
+        });
+    } catch (error) {
+        console.error('Error creating test seller:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to create test seller.",
+            error: error.message
+        });
+    }
+}));
+
+// Update existing sellers with location data (development only)
+router.post('/populate-seller-locations', asyncHandler(async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ success: false, message: 'Not available in production' });
+    }
+
+    try {
+        // Get all existing sellers
+        const { data: sellers } = await User.findByRole('seller', 1, 1000);
+        
+        if (sellers.length === 0) {
+            return res.json({ 
+                success: true, 
+                message: "No sellers found to update" 
+            });
+        }
+
+        // Sample locations in Mindanao
+        const mindanaoLocations = [
+            { lat: 7.1907, lng: 125.4553, city: 'Davao City' },
+            { lat: 8.4542, lng: 124.6319, city: 'Cagayan de Oro' },
+            { lat: 6.9214, lng: 122.0790, city: 'Zamboanga City' },
+            { lat: 6.1167, lng: 125.1667, city: 'General Santos City' },
+            { lat: 7.2167, lng: 124.2500, city: 'Cotabato City' },
+            { lat: 7.5000, lng: 125.7500, city: 'Tagum City' },
+            { lat: 6.7500, lng: 125.3500, city: 'Digos City' },
+            { lat: 8.2500, lng: 124.4000, city: 'Iligan City' }
+        ];
+
+        const updatedSellers = [];
+        
+        for (let i = 0; i < sellers.length; i++) {
+            const seller = sellers[i];
+            const location = mindanaoLocations[i % mindanaoLocations.length];
+            
+            // Update seller with location data
+            const { data: updatedSeller, error } = await supabase
+                .from('users')
+                .update({
+                    latitude: location.lat,
+                    longitude: location.lng,
+                    addressinfo: {
+                        ...seller.addressinfo,
+                        address: `${location.city}, Philippines`,
+                        latitude: location.lat,
+                        longitude: location.lng,
+                        products: seller.addressinfo?.products || ['Agricultural Products']
+                    }
+                })
+                .eq('id', seller.id)
+                .select()
+                .single();
+            
+            if (error) {
+                console.error(`Error updating seller ${seller.id}:`, error);
+            } else {
+                updatedSellers.push({
+                    id: updatedSeller.id,
+                    name: updatedSeller.name,
+                    business_name: updatedSeller.business_name,
+                    latitude: updatedSeller.latitude,
+                    longitude: updatedSeller.longitude,
+                    city: location.city
+                });
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            message: `Updated ${updatedSellers.length} sellers with location data`, 
+            data: updatedSellers 
+        });
+    } catch (error) {
+        console.error('Error populating seller locations:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to populate seller locations.",
+            error: error.message
+        });
+    }
+}));
+
+// Run location migration (development only)
+router.post('/migrate-location', asyncHandler(async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ success: false, message: 'Not available in production' });
+    }
+
+    try {
+        // Add latitude and longitude columns
+        await supabase.rpc('exec_sql', {
+            sql: `
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS latitude DECIMAL(10, 8);
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS longitude DECIMAL(11, 8);
+                CREATE INDEX IF NOT EXISTS idx_users_location ON users(latitude, longitude);
+            `
+        });
+
+        res.json({ 
+            success: true, 
+            message: "Location columns added successfully" 
+        });
+    } catch (error) {
+        console.error('Error running location migration:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to run location migration.",
+            error: error.message
+        });
+    }
+}));
+
 // Get all users with location data (for map display - includes all roles)
 router.get('/with-location', asyncHandler(async (req, res) => {
     try {
@@ -156,6 +466,49 @@ router.get('/with-location', asyncHandler(async (req, res) => {
     }
 }));
 
+// Debug endpoint to check a specific user's data
+router.get('/debug-user/:userId', asyncHandler(async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        
+        const { data: user, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .single();
+        
+        if (error) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+                error: error.message
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: "User data retrieved successfully",
+            data: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                latitude: user.latitude,
+                longitude: user.longitude,
+                addressinfo: user.addressinfo,
+                business_name: user.business_name
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching user data:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch user data",
+            error: error.message
+        });
+    }
+}));
+
 // Search users by name (email)
 router.get('/search', asyncHandler(async (req, res) => {
     const { name } = req.query;
@@ -174,7 +527,7 @@ router.get('/search', asyncHandler(async (req, res) => {
 }));
 
 // login
-router.post('/login', asyncHandler(async (req, res) => {
+router.post('/login', async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -204,7 +557,8 @@ router.post('/login', asyncHandler(async (req, res) => {
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
-}));
+});
+
 
 // Get a user by ID
 router.get('/:id', asyncHandler(async (req, res) => {
@@ -538,6 +892,7 @@ router.post('/:id/promote-admin', asyncHandler(async (req, res) => {
     }
 }));
 
+module.exports = router;
 // Avatar upload
 router.post('/:id/avatar', asyncHandler(async (req, res) => {
   const userID = req.params.id;
@@ -570,5 +925,3 @@ router.post('/:id/avatar', asyncHandler(async (req, res) => {
     res.status(500).json({ success: false, message: e.message });
   }
 }));
-
-module.exports = router;
