@@ -12,6 +12,7 @@
       "dest": "/api/index.js"
     }
   ],
+  "regions": ["sin1"],
   "env": {
     "NODE_ENV": "production",
     "SUPABASE_POSTS_BUCKET": "product-images"
