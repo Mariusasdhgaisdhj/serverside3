@@ -8,9 +8,9 @@ const { supabase } = require('../config/supabase');
 // Get all users
 router.get('/', asyncHandler(async (req, res) => {
     try {
-        const result = await User.findAll();
-        // Return the users array directly, not wrapped in another object
-        res.json({ success: true, message: "Users retrieved successfully.", data: result.data });
+        // Use findAllNoLimit to get all users without pagination
+        const users = await User.findAllNoLimit();
+        res.json({ success: true, message: "Users retrieved successfully.", data: users });
     } catch (error) {
         console.error('Error fetching users:', error);
         res.status(500).json({ 
