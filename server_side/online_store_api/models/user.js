@@ -9,7 +9,7 @@ class User {
         .insert([userData])
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     } catch (error) {
@@ -25,7 +25,7 @@ class User {
         .select('*')
         .eq('id', id)
         .single();
-      
+
       if (error) throw error;
       return data;
     } catch (error) {
@@ -41,7 +41,7 @@ class User {
         .select('*')
         .eq('email', email.toLowerCase().trim())
         .single();
-      
+
       if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows returned
       return data;
     } catch (error) {
@@ -57,7 +57,7 @@ class User {
         .select('*')
         .eq('external_auth_id', externalAuthId)
         .single();
-      
+
       if (error && error.code !== 'PGRST116') throw error;
       return data;
     } catch (error) {
@@ -74,19 +74,19 @@ class User {
         .select('*')
         .eq('external_auth_id', externalAuthId)
         .single();
-      
+
       if (error && error.code === 'PGRST116') {
-        // If not found by external auth ID, try by email
+        // If not found, try by email
         const result = await supabase
           .from('users')
           .select('*')
           .eq('email', email.toLowerCase().trim())
           .single();
-        
+
         data = result.data;
         error = result.error;
       }
-      
+
       if (error && error.code !== 'PGRST116') throw error;
       return data;
     } catch (error) {
@@ -94,7 +94,7 @@ class User {
     }
   }
 
-  // Search users by name (email)
+  // Search users by name
   static async searchByName(name) {
     try {
       const { data, error } = await supabase
@@ -102,7 +102,7 @@ class User {
         .select('*')
         .ilike('name', `%${name}%`)
         .limit(10);
-      
+
       if (error) throw error;
       return data;
     } catch (error) {
@@ -119,7 +119,7 @@ class User {
         .eq('id', id)
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     } catch (error) {
@@ -134,7 +134,7 @@ class User {
         .from('users')
         .delete()
         .eq('id', id);
-      
+
       if (error) throw error;
       return true;
     } catch (error) {
@@ -142,39 +142,78 @@ class User {
     }
   }
 
-  // Get all users with pagination
+  // ✅ Get all users with optional pagination (limit = null = all)
   static async findAll(page = 1, limit = 10) {
     try {
-      const from = (page - 1) * limit;
-      const to = from + limit - 1;
-
-      const { data, error, count } = await supabase
+      let query = supabase
         .from('users')
         .select('*', { count: 'exact' })
-        .range(from, to)
         .order('created_at', { ascending: false });
-      
+
+      // Only apply range if limit is set
+      if (limit && limit > 0) {
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+        query = query.range(from, to);
+      }
+
+      const { data, error, count } = await query;
       if (error) throw error;
+
       return { data, total: count };
     } catch (error) {
       throw new Error(`Error finding users: ${error.message}`);
     }
   }
 
-  // Get users by role
+  // ✅ Get all users (no pagination, all pages)
+  static async findAllNoLimit(batchSize = 1000) {
+    try {
+      let allUsers = [];
+      let from = 0;
+      let to = batchSize - 1;
+      let fetched = [];
+
+      do {
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(from, to);
+
+        if (error) throw error;
+
+        fetched = data || [];
+        allUsers = allUsers.concat(fetched);
+
+        from += batchSize;
+        to += batchSize;
+      } while (fetched.length === batchSize);
+
+      return allUsers;
+    } catch (error) {
+      throw new Error(`Error fetching all users: ${error.message}`);
+    }
+  }
+
+  // ✅ Get users by role (with pagination or no limit)
   static async findByRole(role, page = 1, limit = 10) {
     try {
-      const from = (page - 1) * limit;
-      const to = from + limit - 1;
-
-      const { data, error, count } = await supabase
+      let query = supabase
         .from('users')
         .select('*', { count: 'exact' })
         .eq('role', role)
-        .range(from, to)
         .order('created_at', { ascending: false });
-      
+
+      if (limit && limit > 0) {
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+        query = query.range(from, to);
+      }
+
+      const { data, error, count } = await query;
       if (error) throw error;
+
       return { data, total: count };
     } catch (error) {
       throw new Error(`Error finding users by role: ${error.message}`);
