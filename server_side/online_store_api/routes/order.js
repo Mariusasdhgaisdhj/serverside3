@@ -10,6 +10,109 @@ dotenv.config();
 // OneSignal client for sending push notifications
 const client = new OneSignal.Client(process.env.ONE_SIGNAL_APP_ID, process.env.ONE_SIGNAL_REST_API_KEY);
 
+// Function to validate stock availability before order creation
+async function validateStockAvailability(items) {
+    try {
+        console.log('Validating stock for items:', items);
+        
+        for (const item of items) {
+            const { data: product, error } = await supabase
+                .from('products')
+                .select('id, name, quantity')
+                .eq('id', item.productID)
+                .single();
+                
+            if (error) {
+                throw new Error(`Product ${item.productID} not found: ${error.message}`);
+            }
+            
+            if (!product) {
+                throw new Error(`Product ${item.productID} not found`);
+            }
+            
+            const currentStock = product.quantity || 0;
+            const requestedQuantity = item.quantity || 0;
+            
+            if (currentStock < requestedQuantity) {
+                throw new Error(`Insufficient stock for "${product.name}". Available: ${currentStock}, Requested: ${requestedQuantity}`);
+            }
+        }
+        
+        console.log('Stock validation passed for all items');
+        return true;
+    } catch (error) {
+        console.error('Stock validation failed:', error.message);
+        throw error;
+    }
+}
+
+// Function to update product quantities after successful order
+async function updateProductQuantities(items) {
+    try {
+        console.log('Updating product quantities for items:', items);
+        
+        for (const item of items) {
+            const { error } = await supabase.rpc('decrease_product_quantity', {
+                product_id: item.productID,
+                quantity_to_subtract: item.quantity || 0
+            });
+            
+            if (error) {
+                console.error(`Failed to update quantity for product ${item.productID}:`, error);
+                // Continue with other products even if one fails
+            } else {
+                console.log(`Updated quantity for product ${item.productID}: -${item.quantity}`);
+            }
+        }
+        
+        console.log('Product quantities updated successfully');
+    } catch (error) {
+        console.error('Error updating product quantities:', error.message);
+        throw error;
+    }
+}
+
+// Function to restore product quantities when order is cancelled
+async function restoreProductQuantities(orderId) {
+    try {
+        console.log('Restoring product quantities for cancelled order:', orderId);
+        
+        // Get order items
+        const { data: orderItems, error: itemsError } = await supabase
+            .from('order_items')
+            .select('product_id, quantity')
+            .eq('order_id', orderId);
+            
+        if (itemsError) {
+            throw new Error(`Failed to get order items: ${itemsError.message}`);
+        }
+        
+        if (!orderItems || orderItems.length === 0) {
+            console.log('No items found for order:', orderId);
+            return;
+        }
+        
+        // Restore quantities for each item
+        for (const item of orderItems) {
+            const { error } = await supabase.rpc('increase_product_quantity', {
+                product_id: item.product_id,
+                quantity_to_add: item.quantity || 0
+            });
+            
+            if (error) {
+                console.error(`Failed to restore quantity for product ${item.product_id}:`, error);
+            } else {
+                console.log(`Restored quantity for product ${item.product_id}: +${item.quantity}`);
+            }
+        }
+        
+        console.log('Product quantities restored successfully');
+    } catch (error) {
+        console.error('Error restoring product quantities:', error.message);
+        throw error;
+    }
+}
+
 // Function to send new order notifications to sellers
 async function sendNewOrderNotifications(sellerIds, order, products) {
     try {
@@ -745,6 +848,16 @@ router.post('/', asyncHandler(async (req, res) => {
     }
 
     try {
+        // Validate stock availability before creating order
+        try {
+            await validateStockAvailability(items);
+        } catch (stockError) {
+            return res.status(400).json({ 
+                success: false, 
+                message: stockError.message 
+            });
+        }
+        
         // Validate that user is not trying to buy their own products
         const productIds = Array.isArray(items) ? items.map((it) => it.productID).filter(Boolean) : [];
         
@@ -794,6 +907,10 @@ router.post('/', asyncHandler(async (req, res) => {
         console.log('Adding order items:', items);
         await Order.addItems(order.id, items);
         console.log('Order items added successfully');
+        
+        // Update product quantities (reduce stock)
+        await updateProductQuantities(items);
+        console.log('Product quantities updated successfully');
         
         // Add shipping address
         console.log('Adding shipping address:', shippingAddress);
@@ -964,6 +1081,15 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
         
         if (!updatedOrder) {
             return res.status(500).json({ success: false, message: "Failed to cancel order." });
+        }
+
+        // Restore product quantities when order is cancelled
+        try {
+            await restoreProductQuantities(orderID);
+            console.log('Product quantities restored for cancelled order');
+        } catch (restoreError) {
+            console.error('Failed to restore product quantities:', restoreError.message);
+            // Don't fail the cancellation if stock restoration fails
         }
 
         // Log the cancellation for audit purposes
@@ -1229,6 +1355,44 @@ router.post('/:id/resolve-dispute', asyncHandler(async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// Test stock management functions
+router.post('/test-stock', asyncHandler(async (req, res) => {
+    try {
+        const { productId, quantity } = req.body;
+        
+        if (!productId || !quantity) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Product ID and quantity are required' 
+            });
+        }
+        
+        // Test stock validation
+        const testItems = [{ productID: productId, quantity: parseInt(quantity) }];
+        
+        try {
+            await validateStockAvailability(testItems);
+            res.json({ 
+                success: true, 
+                message: 'Stock validation passed',
+                data: { productId, requestedQuantity: quantity }
+            });
+        } catch (stockError) {
+            res.status(400).json({ 
+                success: false, 
+                message: stockError.message 
+            });
+        }
+        
+    } catch (error) {
+        console.error('Error testing stock:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message || 'Failed to test stock' 
+        });
     }
 }));
 
