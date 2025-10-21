@@ -345,8 +345,9 @@ router.put('/:id', (req, res, next) => {
     const productId = req.params.id;
     try {
         // Prepare update data (snake_case for DB)
-        const { name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId } = req.body;
+        const { sellerId, name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId } = req.body;
         const updateData = {};
+        if (sellerId !== undefined) updateData.seller_id = sellerId;
         if (name !== undefined) updateData.name = String(name).trim();
         if (description !== undefined) updateData.description = String(description).trim();
         if (quantity !== undefined) updateData.quantity = parseInt(quantity);
@@ -438,7 +439,7 @@ router.put('/:id', (req, res, next) => {
             }
         }
 
-        return res.json({ success: true, message: "Product updated successfully." });
+        return res.json({ success: true, message: "Product updated successfully.", data: updatedProduct });
     } catch (error) {
         console.error("Error updating product:", error);
         res.status(500).json({ success: false, message: error.message });
