@@ -7,6 +7,70 @@ const dotenv = require('dotenv');
 const { supabase } = require('../config/supabase');
 dotenv.config();
 
+// OneSignal client for sending push notifications
+const client = new OneSignal.Client(process.env.ONE_SIGNAL_APP_ID, process.env.ONE_SIGNAL_REST_API_KEY);
+
+// Function to send new order notifications to sellers
+async function sendNewOrderNotifications(sellerIds, order, products) {
+    try {
+        console.log('Sending new order notifications to sellers:', sellerIds);
+        
+        // Get buyer information
+        const { data: buyerData, error: buyerError } = await supabase
+            .from('users')
+            .select('firstname, lastname, business_name')
+            .eq('id', order.user_id)
+            .single();
+            
+        if (buyerError) {
+            console.warn('Failed to get buyer info for notification:', buyerError);
+        }
+        
+        const buyerName = buyerData?.business_name || 
+                         `${buyerData?.firstname || ''} ${buyerData?.lastname || ''}`.trim() || 
+                         'A customer';
+        
+        // Get product names
+        const productNames = products.map(p => p.name).filter(Boolean);
+        const productList = productNames.length > 0 ? productNames.join(', ') : 'products';
+        
+        // Create notification for each seller
+        for (const sellerId of sellerIds) {
+            try {
+                const notification = {
+                    app_id: process.env.ONE_SIGNAL_APP_ID,
+                    include_external_user_ids: [String(sellerId)],
+                    headings: { en: '🛒 New Order Received!' },
+                    contents: { 
+                        en: `${buyerName} ordered ${productList} - ₱${order.total_price?.toFixed(2) || '0.00'}` 
+                    },
+                    large_icon: 'https://via.placeholder.com/64x64/4CAF50/FFFFFF?text=🛒',
+                    android_sound: 'default',
+                    ios_sound: 'default',
+                    android_channel_id: process.env.ONE_SIGNAL_ANDROID_CHANNEL_ID || undefined,
+                    priority: 10,
+                    data: {
+                        type: 'new_order',
+                        order_id: order.id,
+                        buyer_id: order.user_id,
+                        total_price: order.total_price,
+                        order_status: order.order_status
+                    }
+                };
+                
+                const response = await client.createNotification(notification);
+                console.log(`New order notification sent to seller ${sellerId}:`, response?.body?.id || 'n/a');
+                
+            } catch (sellerError) {
+                console.warn(`Failed to send notification to seller ${sellerId}:`, sellerError?.message || sellerError);
+            }
+        }
+        
+    } catch (error) {
+        console.warn('Failed to send new order notifications:', error?.message || error);
+    }
+}
+
 // ============================================
 // PAYMENT ROUTES - MUST BE FIRST TO AVOID CONFLICTS
 // ============================================
@@ -749,7 +813,7 @@ router.post('/', asyncHandler(async (req, res) => {
             if (productIds.length > 0) {
                 const { data: proRows, error: proErr } = await supabase
                     .from('products')
-                    .select('id, seller_id')
+                    .select('id, seller_id, name')
                     .in('id', productIds);
                 if (!proErr && Array.isArray(proRows)) {
                     const uniqueSellerIds = [...new Set(proRows.map((p) => p.seller_id).filter(Boolean))];
@@ -758,6 +822,9 @@ router.post('/', asyncHandler(async (req, res) => {
                         for (const sellerId of uniqueSellerIds) {
                             await Conversation.getOrCreate(userID, sellerId);
                         }
+                        
+                        // Send push notifications to sellers about new order
+                        await sendNewOrderNotifications(uniqueSellerIds, order, proRows);
                     }
                 }
             }
@@ -1162,6 +1229,73 @@ router.post('/:id/resolve-dispute', asyncHandler(async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// Send notification for new order (for testing or manual triggers)
+router.post('/:orderId/notify-sellers', asyncHandler(async (req, res) => {
+    try {
+        const orderId = req.params.orderId;
+        
+        // Get order details
+        const { data: orderData, error: orderError } = await supabase
+            .from('orders')
+            .select(`
+                id, user_id, total_price, order_status, created_at,
+                order_items (
+                    product_id,
+                    products (
+                        id, seller_id, name
+                    )
+                )
+            `)
+            .eq('id', orderId)
+            .single();
+            
+        if (orderError || !orderData) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Order not found' 
+            });
+        }
+        
+        // Extract seller IDs and product info
+        const sellerIds = [...new Set(
+            orderData.order_items
+                ?.map(item => item.products?.seller_id)
+                .filter(Boolean) || []
+        )];
+        
+        const products = orderData.order_items
+            ?.map(item => item.products)
+            .filter(Boolean) || [];
+        
+        if (sellerIds.length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'No sellers found for this order' 
+            });
+        }
+        
+        // Send notifications
+        await sendNewOrderNotifications(sellerIds, orderData, products);
+        
+        res.json({ 
+            success: true, 
+            message: 'Notifications sent to sellers', 
+            data: { 
+                orderId, 
+                sellerCount: sellerIds.length,
+                sellers: sellerIds 
+            } 
+        });
+        
+    } catch (error) {
+        console.error('Error sending order notifications:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message || 'Failed to send notifications' 
+        });
     }
 }));
 
