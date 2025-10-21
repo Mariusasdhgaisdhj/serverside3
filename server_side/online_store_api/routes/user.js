@@ -238,7 +238,7 @@ router.post('/register', asyncHandler(async (req, res) => {
 
 // Create a Supabase Auth user (admin) and ensure a matching row exists in users table
 router.post('/create-auth', asyncHandler(async (req, res) => {
-    const { email, password, name, role } = req.body || {};
+    const { email, password, name, role, business_name } = req.body || {};
     if (!email || !password || !name) {
         return res.status(400).json({ success: false, message: 'email, password and name are required' });
     }
@@ -264,6 +264,11 @@ router.post('/create-auth', asyncHandler(async (req, res) => {
             role: role || 'buyer',
             password, // NOTE: for demo only; in production remove storing plain password
         };
+
+        // Add business_name if provided (for sellers)
+        if (business_name && business_name.trim()) {
+            insertPayload.business_name = business_name.trim();
+        }
 
         const { data: row, error: upsertErr } = await supabase
             .from('users')
