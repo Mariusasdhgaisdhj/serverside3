@@ -439,15 +439,59 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 
         // Delete the Supabase Auth account first
         try {
-            const { error: authDelErr } = await supabase.auth.admin.deleteUser(userID);
+            // First, get the user to check if they have an external_auth_id
+            const { data: userData, error: userFetchErr } = await supabase
+                .from('users')
+                .select('id, external_auth_id')
+                .eq('id', userID)
+                .single();
+            
+            if (userFetchErr) {
+                console.warn('Could not fetch user data for auth deletion:', userFetchErr.message);
+            } else {
+                console.log('User data for auth deletion:', userData);
+            }
+            
+            // Use external_auth_id if available, otherwise use the user ID
+            const authUserID = userData?.external_auth_id || userID;
+            console.log('Attempting to delete auth account for user ID:', authUserID);
+            
+            // First, check if the user exists in auth
+            const { data: authUser, error: authGetErr } = await supabase.auth.admin.getUserById(authUserID);
+            if (authGetErr) {
+                console.warn('User not found in auth system or error fetching:', {
+                    error: authGetErr,
+                    message: authGetErr.message,
+                    authUserID: authUserID
+                });
+            } else {
+                console.log('Found auth user:', authUser);
+            }
+            
+            const { data: authDelData, error: authDelErr } = await supabase.auth.admin.deleteUser(authUserID);
+            
             if (authDelErr) {
-                console.warn('Warning: failed to delete auth user:', authDelErr.message);
+                console.error('Failed to delete auth user:', {
+                    error: authDelErr,
+                    message: authDelErr.message,
+                    code: authDelErr.code,
+                    userID: userID,
+                    authUserID: authUserID
+                });
                 // Continue with database deletion even if auth deletion fails
             } else {
-                console.log('Successfully deleted auth account for user:', userID);
+                console.log('Successfully deleted auth account:', {
+                    userID: userID,
+                    authUserID: authUserID,
+                    data: authDelData
+                });
             }
         } catch (e) {
-            console.warn('Warning: auth deletion error:', e?.message || e);
+            console.error('Auth deletion exception:', {
+                error: e,
+                message: e?.message,
+                userID: userID
+            });
         }
 
         // Finally delete the user row from database
