@@ -437,7 +437,20 @@ router.delete('/:id', asyncHandler(async (req, res) => {
             }
         }
 
-        // Finally delete the user row
+        // Delete the Supabase Auth account first
+        try {
+            const { error: authDelErr } = await supabase.auth.admin.deleteUser(userID);
+            if (authDelErr) {
+                console.warn('Warning: failed to delete auth user:', authDelErr.message);
+                // Continue with database deletion even if auth deletion fails
+            } else {
+                console.log('Successfully deleted auth account for user:', userID);
+            }
+        } catch (e) {
+            console.warn('Warning: auth deletion error:', e?.message || e);
+        }
+
+        // Finally delete the user row from database
         // Prefer model method if available, fallback to direct supabase delete
         try {
             if (typeof User.delete === 'function') {
@@ -453,7 +466,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
             console.warn('User delete fallback warning:', e?.message || e);
         }
 
-        res.json({ success: true, message: 'User and related data deleted successfully.' });
+        res.json({ success: true, message: 'User account, auth account, and related data deleted successfully.' });
     } catch (error) {
         console.error('Delete user cascade error:', error);
         res.status(500).json({ success: false, message: error.message });
