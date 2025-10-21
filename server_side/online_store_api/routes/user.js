@@ -8,8 +8,9 @@ const { supabase } = require('../config/supabase');
 // Get all users
 router.get('/', asyncHandler(async (req, res) => {
     try {
-        const users = await User.findAll();
-        res.json({ success: true, message: "Users retrieved successfully.", data: users });
+        const result = await User.findAll();
+        // Return the users array directly, not wrapped in another object
+        res.json({ success: true, message: "Users retrieved successfully.", data: result.data });
     } catch (error) {
         console.error('Error fetching users:', error);
         res.status(500).json({ 
