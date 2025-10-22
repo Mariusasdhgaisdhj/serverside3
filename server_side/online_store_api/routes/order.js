@@ -1060,7 +1060,9 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
             }
         };
 
-        const normalizedOrderUserId = extractIdString(order.userID);
+        // Check multiple possible user ID fields (userID, user_id, userId, etc.)
+        const orderUserId = order.userID || order.user_id || order.userId || order.buyerId || order.buyer_id;
+        const normalizedOrderUserId = extractIdString(orderUserId);
         const normalizedRequestUserId = extractIdString(userId);
 
         console.log('Cancellation request:', {
@@ -1073,12 +1075,20 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
             normalizedRequestUserId
         });
 
+        // TEMPORARY: Log full order for debugging
+        console.log('FULL ORDER DEBUG:', JSON.stringify(order, null, 2));
+
         if (!isAdmin && (!normalizedOrderUserId || normalizedOrderUserId !== normalizedRequestUserId)) {
+            console.log('OWNERSHIP CHECK FAILED:', {
+                normalizedOrderUserId,
+                normalizedRequestUserId,
+                match: normalizedOrderUserId === normalizedRequestUserId
+            });
             return res.status(403).json({ success: false, message: "You can only cancel your own orders." });
         }
 
         // Check if order can be cancelled
-        const currentStatus = (order.orderStatus?.toLowerCase?.() || order.status?.toLowerCase?.() || 'unknown');
+        const currentStatus = (order.orderStatus?.toLowerCase?.() || order.order_status?.toLowerCase?.() || order.status?.toLowerCase?.() || 'unknown');
         const cancellableStatuses = ['pending', 'unpaid', 'paid', 'processing', 'to_ship', 'packed'];
         const nonCancellableStatuses = ['cancelled', 'completed', 'delivered', 'refunded'];
         
