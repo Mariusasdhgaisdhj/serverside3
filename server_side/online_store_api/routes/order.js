@@ -1114,8 +1114,8 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
             console.log('Warning: Order status is unknown/undefined, allowing cancellation anyway');
         }
 
-        // Update order status to cancelled
-        const updatedOrder = await Order.updateStatus(orderID, 'cancelled');
+        // Update order status to cancellation_requested (seller will finalize to cancelled)
+        const updatedOrder = await Order.updateStatus(orderID, 'cancellation_requested');
         
         if (!updatedOrder) {
             return res.status(500).json({ success: false, message: "Failed to cancel order." });
@@ -1130,14 +1130,25 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
             // Don't fail the cancellation if stock restoration fails
         }
 
-        // Log the cancellation for audit purposes
-        console.log(`Order ${orderID} cancelled by ${cancelledBy || 'buyer'}. Reason: ${reason}`);
+        // Log the cancellation request for audit purposes
+        console.log(`Order ${orderID} cancellation requested by ${cancelledBy || 'buyer'}. Reason: ${reason}`);
 
-        // Send push notification to buyer
+        // Send push notification to buyer and seller
         try {
             // Only send notifications if OneSignal environment variables are configured
             if (process.env.ONE_SIGNAL_APP_ID && process.env.ONE_SIGNAL_REST_API_KEY) {
                 await sendCancellationNotifications(order, reason, cancelledBy);
+                // Best-effort: also notify seller that buyer requested cancellation
+                try {
+                    if (oneSignalClient) {
+                        await oneSignalClient.createNotification({
+                            contents: { 'en': `Buyer requested to cancel order #${(order._id||order.id||'').toString().slice(0,8)}. Reason: ${reason}` },
+                            headings: { 'en': 'Cancellation request' },
+                            included_segments: ['All'],
+                            data: { type: 'order_cancel_request', order_id: orderID, reason: reason }
+                        });
+                    }
+                } catch (e) { console.log('Seller notify (cancel request) skipped:', e?.message || e); }
             } else {
                 console.log('OneSignal environment variables not configured, skipping push notifications');
             }
@@ -1148,7 +1159,7 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
 
         res.json({ 
             success: true, 
-            message: "Order cancelled successfully.", 
+            message: "Cancellation request sent to seller.", 
             data: updatedOrder 
         });
     } catch (error) {
