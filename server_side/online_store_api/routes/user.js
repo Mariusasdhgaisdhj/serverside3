@@ -258,7 +258,7 @@ router.post('/create-auth', asyncHandler(async (req, res) => {
 
         // 2) Upsert into users table
         const insertPayload = {
-            id: authUser.id,
+            external_auth_id: authUser.id, // Set external_auth_id to the Supabase auth user ID
             name,
             email: String(email).toLowerCase().trim(),
             role: role || 'buyer',
@@ -272,7 +272,7 @@ router.post('/create-auth', asyncHandler(async (req, res) => {
 
         const { data: row, error: upsertErr } = await supabase
             .from('users')
-            .upsert(insertPayload, { onConflict: 'id' })
+            .upsert(insertPayload, { onConflict: 'email' })
             .select('*')
             .single();
         if (upsertErr) return res.status(500).json({ success: false, message: upsertErr.message });
