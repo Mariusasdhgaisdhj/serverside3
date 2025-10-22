@@ -1167,6 +1167,59 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
     }
 }));
 
+// Handle cancellation request approval/denial by seller
+router.post('/:id/cancel-request', asyncHandler(async (req, res) => {
+    try {
+        const orderID = req.params.id;
+        const { approved } = req.body;
+        
+        if (typeof approved !== 'boolean') {
+            return res.status(400).json({ success: false, message: "Approval status is required." });
+        }
+
+        // Find the order first
+        const order = await Order.findById(orderID);
+        if (!order) {
+            return res.status(404).json({ success: false, message: "Order not found." });
+        }
+
+        if (!order.cancellation_requested) {
+            return res.status(400).json({ success: false, message: "No pending cancellation request for this order." });
+        }
+
+        if (approved) {
+            // Approve cancellation - update status to cancelled and clear cancellation request
+            const updatedOrder = await Order.updateStatus(orderID, 'cancelled');
+            await Order.updateCancellationRequest(orderID, false, null);
+            
+            // Restore product quantities
+            try {
+                await restoreProductQuantities(orderID);
+                console.log('Product quantities restored for cancelled order');
+            } catch (restoreError) {
+                console.error('Failed to restore product quantities:', restoreError.message);
+            }
+            
+            res.json({ 
+                success: true, 
+                message: "Cancellation request approved.", 
+                data: updatedOrder 
+            });
+        } else {
+            // Deny cancellation - just clear the cancellation request
+            await Order.updateCancellationRequest(orderID, false, null);
+            
+            res.json({ 
+                success: true, 
+                message: "Cancellation request denied.", 
+                data: order 
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
 // Process refund for an order
 router.post('/:id/refund', asyncHandler(async (req, res) => {
     try {
