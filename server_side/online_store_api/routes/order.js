@@ -1224,6 +1224,31 @@ router.post('/:id/cancel-request', asyncHandler(async (req, res) => {
                 console.error('Failed to restore product quantities:', restoreError.message);
             }
             
+            // Notify buyer that cancellation was approved
+            try {
+                if (oneSignalClient) {
+                    const buyerId = String(order.user_id || order.userID || '');
+                    const orderId = String(order._id || order.id);
+                    const reason = order.cancellation_reason || 'No reason provided';
+                    
+                    await oneSignalClient.createNotification({
+                        headings: { en: 'Cancellation Approved' },
+                        contents: { en: `Your cancellation request for order #${orderId.slice(0, 8)} has been approved. Reason: ${reason}` },
+                        include_external_user_ids: buyerId ? [buyerId] : [],
+                        data: { 
+                            type: 'order_cancellation_approved', 
+                            order_id: orderID, 
+                            reason: reason 
+                        },
+                        sound: 'default',
+                        priority: 10
+                    });
+                    console.log('Buyer notified of cancellation approval');
+                }
+            } catch (notifError) {
+                console.error('Failed to notify buyer of cancellation approval:', notifError);
+            }
+            
             res.json({ 
                 success: true, 
                 message: "Cancellation request approved.", 
@@ -1232,6 +1257,31 @@ router.post('/:id/cancel-request', asyncHandler(async (req, res) => {
         } else {
             // Deny cancellation - just clear the cancellation request
             await Order.updateCancellationRequest(orderID, false, null);
+            
+            // Notify buyer that cancellation was denied
+            try {
+                if (oneSignalClient) {
+                    const buyerId = String(order.user_id || order.userID || '');
+                    const orderId = String(order._id || order.id);
+                    const reason = order.cancellation_reason || 'No reason provided';
+                    
+                    await oneSignalClient.createNotification({
+                        headings: { en: 'Cancellation Denied' },
+                        contents: { en: `Your cancellation request for order #${orderId.slice(0, 8)} has been denied. Your order will continue processing.` },
+                        include_external_user_ids: buyerId ? [buyerId] : [],
+                        data: { 
+                            type: 'order_cancellation_denied', 
+                            order_id: orderID, 
+                            reason: reason 
+                        },
+                        sound: 'default',
+                        priority: 10
+                    });
+                    console.log('Buyer notified of cancellation denial');
+                }
+            } catch (notifError) {
+                console.error('Failed to notify buyer of cancellation denial:', notifError);
+            }
             
             res.json({ 
                 success: true, 
