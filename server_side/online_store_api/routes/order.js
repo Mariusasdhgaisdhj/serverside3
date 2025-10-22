@@ -1044,23 +1044,36 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
         const isAdmin = cancelledBy === 'admin' || cancelledBy === 'Admin';
 
         // Normalize stored user id (could be ObjectId, string, or populated object)
-        const normalizedOrderUserId = (() => {
+        const extractIdString = (val) => {
             try {
-                if (!order.userID) return '';
-                if (typeof order.userID === 'string') return order.userID;
-                if (order.userID._id) return String(order.userID._id);
-                if (order.userID.id) return String(order.userID.id);
-                // Mongoose ObjectId or other object
-                if (order.userID.toHexString) return order.userID.toHexString();
-                return String(order.userID);
+                if (!val) return '';
+                if (typeof val === 'string') return val.trim();
+                if (val.$oid) return String(val.$oid).trim();
+                if (val._id) return extractIdString(val._id);
+                if (val.id) return extractIdString(val.id);
+                if (typeof val === 'object' && val.toHexString) return val.toHexString();
+                const s = String(val);
+                const match = s.match(/ObjectId\("?([a-fA-F0-9]{24})"?\)/);
+                return (match && match[1]) ? match[1] : s.trim();
             } catch (_) {
                 return '';
             }
-        })();
+        };
 
-        console.log('Cancellation request:', { orderID, userId, cancelledBy, isAdmin, orderUserId: order.userID, normalizedOrderUserId: normalizedOrderUserId });
+        const normalizedOrderUserId = extractIdString(order.userID);
+        const normalizedRequestUserId = extractIdString(userId);
 
-        if (!isAdmin && (!normalizedOrderUserId || normalizedOrderUserId !== String(userId))) {
+        console.log('Cancellation request:', {
+            orderID,
+            userId,
+            cancelledBy,
+            isAdmin,
+            orderUserId: order.userID,
+            normalizedOrderUserId,
+            normalizedRequestUserId
+        });
+
+        if (!isAdmin && (!normalizedOrderUserId || normalizedOrderUserId !== normalizedRequestUserId)) {
             return res.status(403).json({ success: false, message: "You can only cancel your own orders." });
         }
 
