@@ -203,6 +203,32 @@ class Order {
     }
   }
 
+  // Update cancellation request status
+  static async updateCancellationRequest(id, requested, reason = null) {
+    try {
+      const updateData = {
+        cancellation_requested: requested,
+        cancellation_requested_at: requested ? new Date().toISOString() : null
+      };
+      
+      if (reason) {
+        updateData.cancellation_reason = reason;
+      }
+      
+      const { data, error } = await supabase
+        .from('orders')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      throw new Error(`Error updating cancellation request: ${error.message}`);
+    }
+  }
+
   // Delete order
   static async delete(id) {
     try {

@@ -1114,8 +1114,8 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
             console.log('Warning: Order status is unknown/undefined, allowing cancellation anyway');
         }
 
-        // Update order status to cancel_requested (seller will finalize to cancelled)
-        const updatedOrder = await Order.updateStatus(orderID, 'cancel_requested');
+        // Mark order as having a cancellation request (don't change status)
+        const updatedOrder = await Order.updateCancellationRequest(orderID, true, reason);
         
         if (!updatedOrder) {
             return res.status(500).json({ success: false, message: "Failed to cancel order." });
