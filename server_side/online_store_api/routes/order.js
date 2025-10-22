@@ -374,44 +374,75 @@ if (process.env.ONE_SIGNAL_APP_ID && process.env.ONE_SIGNAL_REST_API_KEY) {
     oneSignalClient = new OneSignal.Client(process.env.ONE_SIGNAL_APP_ID, process.env.ONE_SIGNAL_REST_API_KEY);
 }
 
-// Function to send cancellation push notifications
-async function sendCancellationNotifications(order, reason, cancelledBy) {
-    const orderId = order._id || order.id;
-    const buyerName = order.userID?.name || 'Customer';
-    const orderTotal = order.totalPrice || 0;
-    
-    // Prepare notification content
-    const notificationTitle = 'Order Cancelled';
-    const notificationMessage = `Your order #${orderId.slice(0, 8)} has been cancelled. Reason: ${reason}`;
-    
-    // 1. Send Push Notification via OneSignal
-    if (oneSignalClient) {
-        try {
-            const pushNotification = {
-                contents: { 'en': notificationMessage },
-                headings: { 'en': notificationTitle },
-                included_segments: ['All'], // You can target specific users if you have their player IDs
-                data: {
-                    type: 'order_cancelled',
-                    order_id: orderId,
-                    reason: reason,
-                    cancelled_by: cancelledBy || 'admin',
-                    total_amount: orderTotal
-                },
-                // Optional: Add sound and priority
-                sound: 'default',
-                priority: 10
-            };
-            
-            const pushResponse = await oneSignalClient.createNotification(pushNotification);
-            console.log('Push notification sent:', pushResponse.body.id);
-        } catch (pushError) {
-            console.error('Failed to send push notification:', pushError);
-        }
-    } else {
-        console.log('OneSignal client not initialized, skipping push notification');
+// Helper: get seller user IDs for an order (based on items' product sellers)
+async function getSellerIdsForOrder(orderId) {
+    try {
+        const { data: orderItems, error } = await supabase
+            .from('order_items')
+            .select('products:product_id(seller_id)')
+            .eq('order_id', orderId);
+        if (error) throw error;
+        const sellerIds = (orderItems || [])
+            .map((it) => it?.products?.seller_id)
+            .filter(Boolean)
+            .map(String);
+        // Unique
+        return Array.from(new Set(sellerIds));
+    } catch (e) {
+        console.warn('getSellerIdsForOrder failed:', e?.message || e);
+        return [];
     }
-    
+}
+
+// Function to send cancellation push notifications (targeted)
+async function sendCancellationNotifications(order, reason, cancelledBy) {
+    const orderId = String(order._id || order.id);
+    const buyerId = String(order.user_id || order.userID || '');
+    const orderTotal = order.total_price || order.totalPrice || 0;
+
+    if (!oneSignalClient) {
+        console.log('OneSignal client not initialized, skipping push notification');
+        return;
+    }
+
+    // Notify buyer only (their own cancellation request acknowledgment)
+    try {
+        const pushNotification = {
+            contents: { en: `We received your cancellation request for order #${orderId.slice(0, 8)}. Reason: ${reason}` },
+            headings: { en: 'Cancellation requested' },
+            include_external_user_ids: buyerId ? [buyerId] : [],
+            data: {
+                type: 'order_cancel_requested',
+                order_id: orderId,
+                reason,
+                cancelled_by: cancelledBy || 'buyer',
+                total_amount: orderTotal
+            },
+            sound: 'default',
+            priority: 10
+        };
+        await oneSignalClient.createNotification(pushNotification);
+    } catch (pushError) {
+        console.error('Failed to send buyer cancellation notification:', pushError?.message || pushError);
+    }
+}
+
+// Function to notify sellers about the buyer cancellation request
+async function notifySellersCancellationRequest(order, reason) {
+    if (!oneSignalClient) return;
+    const orderId = String(order._id || order.id);
+    const sellerIds = await getSellerIdsForOrder(orderId);
+    if (!sellerIds.length) return;
+    try {
+        await oneSignalClient.createNotification({
+            headings: { en: 'Cancellation request' },
+            contents: { en: `Buyer requested to cancel order #${orderId.slice(0, 8)}. Reason: ${reason}` },
+            include_external_user_ids: sellerIds,
+            data: { type: 'order_cancel_request', order_id: orderId, reason }
+        });
+    } catch (e) {
+        console.warn('Failed to notify sellers of cancellation request:', e?.message || e);
+    }
 }
 
 // Function to send refund push notifications
@@ -1141,17 +1172,7 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
             // Only send notifications if OneSignal environment variables are configured
             if (process.env.ONE_SIGNAL_APP_ID && process.env.ONE_SIGNAL_REST_API_KEY) {
                 await sendCancellationNotifications(order, reason, cancelledBy);
-                // Best-effort: also notify seller that buyer requested cancellation
-                try {
-                    if (oneSignalClient) {
-                        await oneSignalClient.createNotification({
-                            contents: { 'en': `Buyer requested to cancel order #${(order._id||order.id||'').toString().slice(0,8)}. Reason: ${reason}` },
-                            headings: { 'en': 'Cancellation request' },
-                            included_segments: ['All'],
-                            data: { type: 'order_cancel_request', order_id: orderID, reason: reason }
-                        });
-                    }
-                } catch (e) { console.log('Seller notify (cancel request) skipped:', e?.message || e); }
+                await notifySellersCancellationRequest(order, reason);
             } else {
                 console.log('OneSignal environment variables not configured, skipping push notifications');
             }
