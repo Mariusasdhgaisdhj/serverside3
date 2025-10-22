@@ -146,7 +146,12 @@ class Order {
 
       // Apply filters
       if (filters.status) {
-        query = query.eq('order_status', filters.status);
+        // Special virtual status for cancellation requests
+        if (filters.status === 'cancellation_requested') {
+          query = query.eq('cancellation_requested', true);
+        } else {
+          query = query.eq('order_status', filters.status);
+        }
       }
       if (filters.paymentMethod) {
         query = query.eq('payment_method', filters.paymentMethod);

@@ -757,6 +757,9 @@ router.get('/', asyncHandler(async (req, res) => {
             _id: o.id,
             userID: o.users ? { _id: o.user_id, name: o.users.name } : { _id: o.user_id, name: undefined },
             orderStatus: o.order_status,
+            cancellationRequested: !!o.cancellation_requested,
+            cancellationReason: o.cancellation_reason || null,
+            cancellationRequestedAt: o.cancellation_requested_at || null,
             items: (o.order_items || []).map((it) => ({
                 _id: it.id,
                 productID: it.product_id,
