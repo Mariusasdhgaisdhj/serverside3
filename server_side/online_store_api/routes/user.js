@@ -4,6 +4,7 @@ const router = express.Router();
 const User = require('../models/user');
 const { uploadCategory } = require('../uploadFile');
 const { supabase } = require('../config/supabase');
+const OneSignal = require('onesignal-node');
 
 // Get all users
 router.get('/', asyncHandler(async (req, res) => {
@@ -598,6 +599,232 @@ router.post('/:id/promote-admin', asyncHandler(async (req, res) => {
     } catch (error) {
         console.error('Error promoting user to admin:', error);
         res.status(500).json({ success: false, message: 'Failed to promote user to admin' });
+    }
+}));
+
+// Suspend a user account
+router.post('/:id/suspend', asyncHandler(async (req, res) => {
+    const userID = req.params.id;
+    const { reason } = req.body || {};
+    
+    try {
+        const updateData = {
+            suspended: true,
+            suspension_reason: reason || 'Account suspended by administrator',
+            suspended_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+        
+        const user = await User.update(userID, updateData);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        
+        // Create in-app notification for the user
+        try {
+            await supabase.from('notifications').insert({
+                user_id: userID,
+                title: 'Account Suspended',
+                message: `Your account has been suspended. Reason: ${reason || 'Account suspended by administrator'}`,
+                type: 'account_suspended',
+                is_read: false,
+            });
+        } catch (notificationError) {
+            console.warn('Failed to create suspension notification:', notificationError);
+        }
+        
+        // Send push notification to the suspended user
+        try {
+            const appId = process.env.ONE_SIGNAL_APP_ID;
+            const apiKey = process.env.ONE_SIGNAL_REST_API_KEY;
+            
+            if (appId && apiKey) {
+                const client = new OneSignal.Client(appId, apiKey);
+                
+                // Get user details for personalized notification
+                const userName = user.firstname && user.lastname 
+                    ? `${user.firstname} ${user.lastname}`.trim()
+                    : user.name || user.business_name || 'User';
+                
+                const notificationBody = {
+                    app_id: appId,
+                    include_external_user_ids: [String(userID)],
+                    headings: { en: 'Account Suspended' },
+                    contents: { 
+                        en: `Your account has been suspended. Reason: ${reason || 'Account suspended by administrator'}` 
+                    },
+                    // Make notification prominent
+                    android_sound: 'default',
+                    ios_sound: 'default',
+                    priority: 10,
+                    android_channel_id: process.env.ONE_SIGNAL_ANDROID_CHANNEL_ID || undefined,
+                    data: {
+                        type: 'account_suspended',
+                        user_id: String(userID),
+                        reason: reason || 'Account suspended by administrator',
+                        suspended_at: new Date().toISOString()
+                    }
+                };
+                
+                const pushResponse = await client.createNotification(notificationBody);
+                console.log('Suspension push notification sent:', pushResponse?.body?.id || 'n/a');
+            } else {
+                console.warn('OneSignal not configured - skipping push notification');
+            }
+        } catch (pushError) {
+            console.warn('Failed to send suspension push notification:', pushError);
+            // Don't fail the suspend operation if push notification fails
+        }
+        
+        res.json({ success: true, message: 'User account suspended', data: user });
+    } catch (error) {
+        console.error('Error suspending user:', error);
+        res.status(500).json({ success: false, message: 'Failed to suspend user account' });
+    }
+}));
+
+// Unsuspend a user account
+router.post('/:id/unsuspend', asyncHandler(async (req, res) => {
+    const userID = req.params.id;
+    
+    try {
+        const updateData = {
+            suspended: false,
+            suspension_reason: null,
+            suspended_at: null,
+            updated_at: new Date().toISOString()
+        };
+        
+        const user = await User.update(userID, updateData);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        
+        // Create in-app notification for the user
+        try {
+            await supabase.from('notifications').insert({
+                user_id: userID,
+                title: 'Account Restored',
+                message: 'Your account has been restored and you can now log in again.',
+                type: 'account_restored',
+                is_read: false,
+            });
+        } catch (notificationError) {
+            console.warn('Failed to create restoration notification:', notificationError);
+        }
+        
+        // Send push notification to the restored user
+        try {
+            const appId = process.env.ONE_SIGNAL_APP_ID;
+            const apiKey = process.env.ONE_SIGNAL_REST_API_KEY;
+            
+            if (appId && apiKey) {
+                const client = new OneSignal.Client(appId, apiKey);
+                
+                const notificationBody = {
+                    app_id: appId,
+                    include_external_user_ids: [String(userID)],
+                    headings: { en: 'Account Restored' },
+                    contents: { 
+                        en: 'Your account has been restored and you can now log in again.' 
+                    },
+                    // Make notification prominent
+                    android_sound: 'default',
+                    ios_sound: 'default',
+                    priority: 10,
+                    android_channel_id: process.env.ONE_SIGNAL_ANDROID_CHANNEL_ID || undefined,
+                    data: {
+                        type: 'account_restored',
+                        user_id: String(userID),
+                        restored_at: new Date().toISOString()
+                    }
+                };
+                
+                const pushResponse = await client.createNotification(notificationBody);
+                console.log('Restoration push notification sent:', pushResponse?.body?.id || 'n/a');
+            } else {
+                console.warn('OneSignal not configured - skipping push notification');
+            }
+        } catch (pushError) {
+            console.warn('Failed to send restoration push notification:', pushError);
+            // Don't fail the unsuspend operation if push notification fails
+        }
+        
+        res.json({ success: true, message: 'User account restored', data: user });
+    } catch (error) {
+        console.error('Error unsuspending user:', error);
+        res.status(500).json({ success: false, message: 'Failed to restore user account' });
+    }
+}));
+
+// Send announcement push notification to all users
+router.post('/send-announcement', asyncHandler(async (req, res) => {
+    const { title, message, type = 'announcement' } = req.body || {};
+    
+    if (!title || !message) {
+        return res.status(400).json({ success: false, message: 'Title and message are required' });
+    }
+    
+    try {
+        const appId = process.env.ONE_SIGNAL_APP_ID;
+        const apiKey = process.env.ONE_SIGNAL_REST_API_KEY;
+        
+        if (!appId || !apiKey) {
+            return res.status(500).json({ success: false, message: 'OneSignal not configured' });
+        }
+        
+        const client = new OneSignal.Client(appId, apiKey);
+        
+        const notificationBody = {
+            app_id: appId,
+            included_segments: ['All'], // Send to all users
+            headings: { en: title },
+            contents: { en: message },
+            // Make announcement prominent
+            android_sound: 'default',
+            ios_sound: 'default',
+            priority: 10,
+            android_channel_id: process.env.ONE_SIGNAL_ANDROID_CHANNEL_ID || undefined,
+            data: {
+                type: type,
+                announcement: true,
+                sent_at: new Date().toISOString()
+            }
+        };
+        
+        const pushResponse = await client.createNotification(notificationBody);
+        console.log('Announcement push notification sent:', pushResponse?.body?.id || 'n/a');
+        
+        // Also create in-app notifications for all users
+        try {
+            const { data: allUsers } = await supabase
+                .from('users')
+                .select('id');
+            
+            if (allUsers && allUsers.length > 0) {
+                const notifications = allUsers.map(user => ({
+                    user_id: user.id,
+                    title: title,
+                    message: message,
+                    type: type,
+                    is_read: false,
+                    created_at: new Date().toISOString()
+                }));
+                
+                await supabase.from('notifications').insert(notifications);
+                console.log(`Created ${notifications.length} in-app notifications`);
+            }
+        } catch (notificationError) {
+            console.warn('Failed to create in-app notifications:', notificationError);
+        }
+        
+        res.json({ 
+            success: true, 
+            message: 'Announcement sent successfully', 
+            data: { 
+                notificationId: pushResponse?.body?.id,
+                sentTo: 'All users'
+            } 
+        });
+    } catch (error) {
+        console.error('Error sending announcement:', error);
+        res.status(500).json({ success: false, message: 'Failed to send announcement' });
     }
 }));
 
