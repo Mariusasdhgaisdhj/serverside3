@@ -1042,16 +1042,31 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
         // Verify the user owns this order (unless they are an admin)
         // Check if user is admin by looking for admin role or if cancelledBy is 'admin'
         const isAdmin = cancelledBy === 'admin' || cancelledBy === 'Admin';
-        
-        console.log('Cancellation request:', { orderID, userId, cancelledBy, isAdmin, orderUserId: order.userID });
-        
-        if (!isAdmin && (!order.userID || order.userID.toString() !== userId)) {
+
+        // Normalize stored user id (could be ObjectId, string, or populated object)
+        const normalizedOrderUserId = (() => {
+            try {
+                if (!order.userID) return '';
+                if (typeof order.userID === 'string') return order.userID;
+                if (order.userID._id) return String(order.userID._id);
+                if (order.userID.id) return String(order.userID.id);
+                // Mongoose ObjectId or other object
+                if (order.userID.toHexString) return order.userID.toHexString();
+                return String(order.userID);
+            } catch (_) {
+                return '';
+            }
+        })();
+
+        console.log('Cancellation request:', { orderID, userId, cancelledBy, isAdmin, orderUserId: order.userID, normalizedOrderUserId: normalizedOrderUserId });
+
+        if (!isAdmin && (!normalizedOrderUserId || normalizedOrderUserId !== String(userId))) {
             return res.status(403).json({ success: false, message: "You can only cancel your own orders." });
         }
 
         // Check if order can be cancelled
-        const currentStatus = order.orderStatus?.toLowerCase() || order.status?.toLowerCase() || 'unknown';
-        const cancellableStatuses = ['pending', 'paid', 'processing'];
+        const currentStatus = (order.orderStatus?.toLowerCase?.() || order.status?.toLowerCase?.() || 'unknown');
+        const cancellableStatuses = ['pending', 'unpaid', 'paid', 'processing', 'to_ship', 'packed'];
         const nonCancellableStatuses = ['cancelled', 'completed', 'delivered', 'refunded'];
         
         console.log('Order status check:', { 
