@@ -629,6 +629,66 @@ router.post('/:postId/show', asyncHandler(async (req, res) => {
   }
 }));
 
+// Flag post - NEW
+router.post('/:postId/flag', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+    
+    const updated = await Post.update(postId, { 
+      is_flagged: true,
+      updated_at: new Date().toISOString()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Post flagged successfully',
+      data: updated
+    });
+  } catch (error) {
+    console.error('Error flagging post:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to flag post', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
+// Unflag post - NEW
+router.post('/:postId/unflag', asyncHandler(async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+    
+    const updated = await Post.update(postId, { 
+      is_flagged: false,
+      updated_at: new Date().toISOString()
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Post unflagged successfully',
+      data: updated
+    });
+  } catch (error) {
+    console.error('Error unflagging post:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to unflag post', 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
+
 // Moderate post
 router.post('/:postId/moderate', asyncHandler(async (req, res) => {
   try {
