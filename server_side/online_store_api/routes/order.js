@@ -1019,6 +1019,72 @@ router.post('/:id/status', asyncHandler(async (req, res) => {
     }
 }));
 
+// Confirm order received (buyer clicks "Order Received" like Shopee)
+router.post('/:id/receive', asyncHandler(async (req, res) => {
+    try {
+        const orderID = req.params.id;
+        const { userId, receivedBy } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({ success: false, message: "User ID is required." });
+        }
+
+        // Get the order first to check status
+        const order = await Order.findById(orderID);
+        if (!order) {
+            return res.status(404).json({ success: false, message: "Order not found." });
+        }
+
+        // Verify this is the buyer
+        if (order.userID?._id !== userId && order.userID?.toString() !== userId) {
+            return res.status(403).json({ success: false, message: "Unauthorized. This order does not belong to you." });
+        }
+
+        // Only allow confirmation if order is in valid status
+        const currentStatus = (order.orderStatus || order.order_status || '').toLowerCase();
+        const allowedStatuses = ['shipped', 'out_for_delivery', 'to_receive'];
+        
+        if (!allowedStatuses.includes(currentStatus)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: `Cannot confirm receipt. Order status must be: ${allowedStatuses.join(', ')}` 
+            });
+        }
+
+        // Update order status to completed
+        const updatedOrder = await Order.updateStatus(orderID, 'completed');
+        if (!updatedOrder) {
+            return res.status(500).json({ success: false, message: "Failed to update order status." });
+        }
+
+        // Send notification to seller
+        try {
+            if (process.env.ONE_SIGNAL_APP_ID && process.env.ONE_SIGNAL_REST_API_KEY) {
+                const NotificationService = require('../services/notificationService');
+                await NotificationService.sendOrderNotification(
+                    order.sellerID || order.sellerId,
+                    'order_received',
+                    {
+                        orderId: orderID,
+                        orderStatus: 'completed',
+                        message: 'Buyer confirmed receipt of order'
+                    }
+                );
+            }
+        } catch (notifError) {
+            console.error('Failed to send notification to seller:', notifError);
+        }
+
+        res.json({ 
+            success: true, 
+            message: "Order confirmed as received successfully.", 
+            data: updatedOrder 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
 // Add tracking information
 router.post('/:id/tracking', asyncHandler(async (req, res) => {
     try {
