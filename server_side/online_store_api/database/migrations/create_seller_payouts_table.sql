@@ -27,9 +27,11 @@ CREATE TABLE IF NOT EXISTS public.seller_payouts (
 );
 
 -- Add comment
-COMMENT ON TABLE public.seller_payouts IS 'Tracks payouts to sellers for completed orders';
-COMMENT ON COLUMN public.seller_payouts.payout_method IS 'Method used to payout: gcash, bank_transfer, paypal, etc.';
-COMMENT ON COLUMN public.seller_payouts.payout_info IS 'Information needed for payout (GCash number, account details, etc.)';
+COMMENT ON TABLE public.seller_payouts IS 'Tracks payouts to sellers for completed orders - 100% to seller, no platform fees';
+COMMENT ON COLUMN public.seller_payouts.payout_method IS 'Method used to payout: gcash only';
+COMMENT ON COLUMN public.seller_payouts.payout_info IS 'Information needed for payout (GCash number only)';
+COMMENT ON COLUMN public.seller_payouts.fee IS 'Platform fee: Always 0 (no fees charged)';
+COMMENT ON COLUMN public.seller_payouts.net_amount IS 'Amount sent to seller: 100% of order value';
 
 -- Create index for faster queries
 CREATE INDEX IF NOT EXISTS idx_seller_payouts_seller_id ON public.seller_payouts(seller_id);
