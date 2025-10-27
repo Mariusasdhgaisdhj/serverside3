@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const asyncHandler = require('express-async-handler');
 const { Pool } = require('pg');
+const OneSignal = require('onesignal-node');
+const { supabase } = require('../config/supabase');
 
 // Database connection
 const pool = new Pool({
@@ -186,6 +188,60 @@ router.post('/payouts/:payoutId/complete', asyncHandler(async (req, res) => {
       console.warn('Could not update seller_payouts table:', sellerPayoutError.message);
     }
 
+    // Send push notification to seller about successful payout
+    try {
+      const appId = process.env.ONE_SIGNAL_APP_ID;
+      const apiKey = process.env.ONE_SIGNAL_REST_API_KEY;
+      
+      if (appId && apiKey) {
+        const client = new OneSignal.Client(appId, apiKey);
+        
+        const notification = {
+          app_id: appId,
+          include_external_user_ids: [String(payout.seller_id)],
+          headings: { en: '💰 Payout Processed Successfully!' },
+          contents: { 
+            en: `₱${parseFloat(payout.amount).toFixed(2)} has been sent to your GCash account (${payout.gcash_number})` 
+          },
+          large_icon: 'https://via.placeholder.com/64x64/4CAF50/FFFFFF?text=💰',
+          android_sound: 'default',
+          ios_sound: 'default',
+          priority: 10,
+          android_channel_id: process.env.ONE_SIGNAL_ANDROID_CHANNEL_ID || undefined,
+          data: {
+            type: 'payout_completed',
+            seller_id: payout.seller_id,
+            amount: payout.amount,
+            payment_id: paymentId
+          }
+        };
+        
+        await client.createNotification(notification);
+        console.log('Payout success notification sent to seller:', payout.seller_id);
+      }
+    } catch (notifError) {
+      console.warn('Failed to send payout success notification:', notifError);
+    }
+
+    // Create in-app notification for seller
+    try {
+      await supabase.from('notifications').insert({
+        user_id: payout.seller_id,
+        title: 'Payout Processed',
+        message: `₱${parseFloat(payout.amount).toFixed(2)} has been sent to your GCash account (${payout.gcash_number})`,
+        type: 'payout_completed',
+        is_read: false,
+        data: {
+          amount: payout.amount,
+          payment_id: paymentId,
+          gcash_number: payout.gcash_number
+        }
+      });
+      console.log('In-app payout notification created for seller');
+    } catch (inAppNotifError) {
+      console.warn('Failed to create in-app payout notification:', inAppNotifError);
+    }
+
     res.json({
       success: true,
       message: "Payout completed successfully",
@@ -225,6 +281,146 @@ router.get('/payouts', asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting payout history:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+}));
+
+// Process GCash payout (initiate payout request)
+router.post('/payout', asyncHandler(async (req, res) => {
+  try {
+    const { sellerId, amount, gcashNumber, gcashName, notes, successUrl, failedUrl } = req.body;
+
+    if (!sellerId || !amount || !gcashNumber || !gcashName) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Missing required fields: sellerId, amount, gcashNumber, gcashName" 
+      });
+    }
+
+    if (!PAYMONGO_SECRET_KEY || !PAYMONGO_PUBLIC_KEY) {
+      return res.status(500).json({ 
+        success: false, 
+        message: "PayMongo credentials not configured" 
+      });
+    }
+
+    // Create GCash source
+    const sourceResponse = await fetch(`${PAYMONGO_BASE_URL}/sources`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PAYMONGO_SECRET_KEY + ':').toString('base64')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        data: {
+          attributes: {
+            amount: Math.round(amount * 100), // Convert to centavos
+            redirect: {
+              success: successUrl || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payouts/success`,
+              failed: failedUrl || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payouts/failed`,
+            },
+            type: 'gcash',
+            currency: 'PHP',
+            description: `Payout to ${gcashName} (${gcashNumber}) - ${notes || 'Seller payout'}`,
+          },
+        },
+      }),
+    });
+
+    if (!sourceResponse.ok) {
+      const error = await sourceResponse.json();
+      throw new Error(error.errors?.[0]?.detail || 'Failed to create GCash source');
+    }
+
+    const sourceData = await sourceResponse.json();
+    const sourceId = sourceData.data.id;
+    const checkoutUrl = sourceData.data.attributes.redirect.checkout_url;
+
+    // Store source in database
+    const sourceQuery = `
+      INSERT INTO paymongo_sources (
+        paymongo_id, seller_id, amount, type, status, 
+        checkout_url, response_data, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+      ON CONFLICT (paymongo_id) DO NOTHING
+      RETURNING id
+    `;
+
+    await pool.query(sourceQuery, [
+      sourceId,
+      sellerId,
+      amount,
+      'gcash',
+      'pending',
+      checkoutUrl,
+      JSON.stringify(sourceData.data)
+    ]);
+
+    // Send push notification to seller about pending payout authorization
+    try {
+      const appId = process.env.ONE_SIGNAL_APP_ID;
+      const apiKey = process.env.ONE_SIGNAL_REST_API_KEY;
+      
+      if (appId && apiKey) {
+        const client = new OneSignal.Client(appId, apiKey);
+        
+        const notification = {
+          app_id: appId,
+          include_external_user_ids: [String(sellerId)],
+          headings: { en: '💰 Payout Pending Authorization' },
+          contents: { 
+            en: `Please authorize the payout of ₱${parseFloat(amount).toFixed(2)} to your GCash account` 
+          },
+          large_icon: 'https://via.placeholder.com/64x64/FF9800/FFFFFF?text=💰',
+          android_sound: 'default',
+          ios_sound: 'default',
+          priority: 10,
+          android_channel_id: process.env.ONE_SIGNAL_ANDROID_CHANNEL_ID || undefined,
+          data: {
+            type: 'payout_pending',
+            seller_id: sellerId,
+            amount: amount,
+            checkout_url: checkoutUrl
+          }
+        };
+        
+        await client.createNotification(notification);
+        console.log('Payout authorization request notification sent to seller:', sellerId);
+      }
+    } catch (notifError) {
+      console.warn('Failed to send payout authorization notification:', notifError);
+    }
+
+    // Create in-app notification for seller
+    try {
+      await supabase.from('notifications').insert({
+        user_id: sellerId,
+        title: 'Payout Authorization Required',
+        message: `Please authorize the payout of ₱${parseFloat(amount).toFixed(2)} to your GCash account (${gcashNumber})`,
+        type: 'payout_pending',
+        is_read: false,
+        data: {
+          amount: amount,
+          source_id: sourceId,
+          checkout_url: checkoutUrl
+        }
+      });
+      console.log('In-app payout authorization notification created for seller');
+    } catch (inAppNotifError) {
+      console.warn('Failed to create in-app payout notification:', inAppNotifError);
+    }
+
+    res.json({
+      success: true,
+      message: "GCash payout source created",
+      checkoutUrl: checkoutUrl,
+      data: {
+        sourceId: sourceId,
+        status: 'pending_authorization'
+      }
+    });
+  } catch (error) {
+    console.error('Error creating GCash payout:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 }));
