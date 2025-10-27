@@ -1035,19 +1035,34 @@ router.post('/:id/receive', asyncHandler(async (req, res) => {
             return res.status(404).json({ success: false, message: "Order not found." });
         }
 
-        // Verify this is the buyer
-        if (order.userID?._id !== userId && order.userID?.toString() !== userId) {
+        // Verify this is the buyer - handle both nested user object and direct user_id
+        const orderUserId = order.user_id || order.userId || order.userID;
+        const isOwner = orderUserId === userId || 
+                        orderUserId?.toString() === userId ||
+                        (order.users && order.users.id === userId) ||
+                        (order.userID && order.userID === userId);
+        
+        if (!isOwner) {
+            console.log('User ownership check failed:', {
+                orderUserId,
+                requestUserId: userId,
+                orderUser: order.user_id,
+                userObject: order.users,
+                orderData: order
+            });
             return res.status(403).json({ success: false, message: "Unauthorized. This order does not belong to you." });
         }
 
         // Only allow confirmation if order is in valid status
-        const currentStatus = (order.orderStatus || order.order_status || '').toLowerCase();
+        const currentStatus = (order.order_status || order.orderStatus || '').toLowerCase();
         const allowedStatuses = ['shipped', 'out_for_delivery', 'to_receive'];
+        
+        console.log('Order status check:', { currentStatus, allowedStatuses, orderStatus: order.order_status });
         
         if (!allowedStatuses.includes(currentStatus)) {
             return res.status(400).json({ 
                 success: false, 
-                message: `Cannot confirm receipt. Order status must be: ${allowedStatuses.join(', ')}` 
+                message: `Cannot confirm receipt. Order status must be: ${allowedStatuses.join(', ')}. Current status: ${currentStatus}` 
             });
         }
 
