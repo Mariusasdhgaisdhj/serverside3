@@ -3,7 +3,8 @@
 -- Table to store PayMongo sources (GCash authorization)
 CREATE TABLE public.paymongo_sources (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
-  source_id character varying NOT NULL UNIQUE, -- PayMongo source ID
+  paymongo_id character varying NOT NULL UNIQUE, -- PayMongo source ID from their API
+  seller_id uuid, -- Optional seller ID (for payout sources)
   amount numeric NOT NULL,
   currency character varying NOT NULL DEFAULT 'PHP',
   description text,
@@ -13,16 +14,18 @@ CREATE TABLE public.paymongo_sources (
   success_url text,
   failed_url text,
   payment_id character varying, -- PayMongo payment ID after successful charge
+  response_data jsonb, -- Full response from PayMongo API
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT paymongo_sources_pkey PRIMARY KEY (id)
+  CONSTRAINT paymongo_sources_pkey PRIMARY KEY (id),
+  CONSTRAINT paymongo_sources_seller_id_fkey FOREIGN KEY (seller_id) REFERENCES public.users(id)
 );
 
 -- Table to store PayMongo payout requests
 CREATE TABLE public.paymongo_payouts (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
   seller_id uuid NOT NULL,
-  source_id character varying NOT NULL, -- References paymongo_sources.source_id
+  source_id character varying NOT NULL, -- References paymongo_sources.paymongo_id
   amount numeric NOT NULL,
   gcash_number character varying NOT NULL,
   gcash_name character varying NOT NULL,
@@ -35,7 +38,7 @@ CREATE TABLE public.paymongo_payouts (
   completed_at timestamp with time zone,
   CONSTRAINT paymongo_payouts_pkey PRIMARY KEY (id),
   CONSTRAINT paymongo_payouts_seller_id_fkey FOREIGN KEY (seller_id) REFERENCES public.users(id),
-  CONSTRAINT paymongo_payouts_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.paymongo_sources(source_id)
+  CONSTRAINT paymongo_payouts_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.paymongo_sources(paymongo_id)
 );
 
 -- Create indexes for better performance

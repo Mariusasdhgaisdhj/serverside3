@@ -61,9 +61,9 @@ router.get('/payouts/:payoutId/status', asyncHandler(async (req, res) => {
     const { payoutId } = req.params;
 
     const query = `
-      SELECT p.*, s.source_id, s.status as source_status
+      SELECT p.*, s.paymongo_id as source_id, s.status as source_status
       FROM paymongo_payouts p
-      LEFT JOIN paymongo_sources s ON p.source_id = s.source_id
+      LEFT JOIN paymongo_sources s ON p.source_id = s.paymongo_id
       WHERE p.id = $1
     `;
 
@@ -97,9 +97,9 @@ router.post('/payouts/:payoutId/complete', asyncHandler(async (req, res) => {
 
     // Get payout details
     const payoutQuery = `
-      SELECT p.*, s.source_id, s.status as source_status
+      SELECT p.*, s.paymongo_id as source_id, s.status as source_status
       FROM paymongo_payouts p
-      LEFT JOIN paymongo_sources s ON p.source_id = s.source_id
+      LEFT JOIN paymongo_sources s ON p.source_id = s.paymongo_id
       WHERE p.id = $1
     `;
 
