@@ -223,7 +223,7 @@ router.get('/:sellerId/earnings', asyncHandler(async (req, res) => {
             data: {
                 pendingEarnings,
                 completedPayouts,
-                totalEarnings: completedPayouts + (pendingEarnings * 0.95), // 5% platform fee
+                totalEarnings: completedPayouts + pendingEarnings, // No platform fee - 100% to seller
                 totalOrders: pendingOrders?.length || 0
             }
         });
@@ -281,10 +281,10 @@ router.post('/:sellerId/payout', asyncHandler(async (req, res) => {
             });
         }
         
-        // Calculate total amount (with 5% platform fee)
+        // Calculate total amount (no platform fee - 100% to seller)
         const totalAmount = orders.reduce((sum, order) => sum + (order.total_price || 0), 0);
-        const platformFee = totalAmount * 0.05;
-        const netAmount = totalAmount * 0.95;
+        const platformFee = 0; // No fee - completely free
+        const netAmount = totalAmount; // 100% to seller
         
         // Get payout information from seller
         const payoutInfo = seller.payoutinfo || {};
