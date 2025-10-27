@@ -183,4 +183,183 @@ router.get('/:sellerId/activity', asyncHandler(async (req, res) => {
     }
 }));
 
+// Get seller earnings (pending and completed)
+router.get('/:sellerId/earnings', asyncHandler(async (req, res) => {
+    try {
+        const { sellerId } = req.params;
+        
+        // Get pending earnings (orders completed but not paid out)
+        const { data: pendingOrders, error: pendingError } = await supabase
+            .from('orders')
+            .select('id, total_price, order_status, created_at')
+            .eq('user_id', sellerId)
+            .eq('order_status', 'completed')
+            .not('id', 'in', supabase
+                .from('seller_payouts')
+                .select('order_id')
+                .eq('seller_id', sellerId)
+                .eq('status', 'completed')
+            );
+        
+        if (pendingError) throw pendingError;
+        
+        const pendingEarnings = pendingOrders?.reduce((sum, order) => sum + (order.total_price || 0), 0) || 0;
+        
+        // Get total payouts
+        const { data: payoutsData, error: payoutsError } = await supabase
+            .from('seller_payouts')
+            .select('amount, net_amount, status')
+            .eq('seller_id', sellerId);
+        
+        if (payoutsError) throw payoutsError;
+        
+        const completedPayouts = payoutsData?.filter(p => p.status === 'completed')
+            .reduce((sum, p) => sum + (p.net_amount || 0), 0) || 0;
+        
+        const totalPayouts = payoutsData?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
+        
+        res.json({
+            success: true,
+            data: {
+                pendingEarnings,
+                completedPayouts,
+                totalEarnings: completedPayouts + (pendingEarnings * 0.95), // 5% platform fee
+                totalOrders: pendingOrders?.length || 0
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching seller earnings: ' + error.message
+        });
+    }
+}));
+
+// Process seller payout
+router.post('/:sellerId/payout', asyncHandler(async (req, res) => {
+    try {
+        const { sellerId } = req.params;
+        const { orderIds, payoutMethod, adminNotes } = req.body;
+        const adminId = req.body.processedBy;
+        
+        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Order IDs are required'
+            });
+        }
+        
+        // Get seller info
+        const { data: seller, error: sellerError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', sellerId)
+            .single();
+        
+        if (sellerError) throw sellerError;
+        if (!seller) {
+            return res.status(404).json({
+                success: false,
+                message: 'Seller not found'
+            });
+        }
+        
+        // Get orders to payout
+        const { data: orders, error: ordersError } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('user_id', sellerId)
+            .in('id', orderIds)
+            .eq('order_status', 'completed');
+        
+        if (ordersError) throw ordersError;
+        
+        if (!orders || orders.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No valid completed orders found'
+            });
+        }
+        
+        // Calculate total amount (with 5% platform fee)
+        const totalAmount = orders.reduce((sum, order) => sum + (order.total_price || 0), 0);
+        const platformFee = totalAmount * 0.05;
+        const netAmount = totalAmount * 0.95;
+        
+        // Get payout information from seller
+        const payoutInfo = seller.payoutinfo || {};
+        
+        // Create payout record
+        const { data: payout, error: payoutError } = await supabase
+            .from('seller_payouts')
+            .insert([{
+                seller_id: sellerId,
+                amount: totalAmount,
+                fee: platformFee,
+                net_amount: netAmount,
+                payment_method: orders[0].payment_method || 'cod',
+                payout_method: payoutMethod || 'gcash',
+                payout_info: payoutInfo,
+                status: 'processing',
+                processed_by: adminId,
+                notes: adminNotes || 'Payout initiated by admin',
+                order_id: orderIds[0] // Store first order as reference
+            }])
+            .select()
+            .single();
+        
+        if (payoutError) throw payoutError;
+        
+        res.json({
+            success: true,
+            message: 'Payout initiated successfully',
+            data: {
+                payout,
+                totalAmount,
+                platformFee,
+                netAmount,
+                ordersCount: orders.length
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error processing payout: ' + error.message
+        });
+    }
+}));
+
+// Get seller payout history
+router.get('/:sellerId/payouts', asyncHandler(async (req, res) => {
+    try {
+        const { sellerId } = req.params;
+        const { status, limit = 20, offset = 0 } = req.query;
+        
+        let query = supabase
+            .from('seller_payouts')
+            .select('*, orders!inner(id, total_price, order_status), sellers:processed_by(name, email)')
+            .eq('seller_id', sellerId)
+            .order('created_at', { ascending: false });
+        
+        if (status) {
+            query = query.eq('status', status);
+        }
+        
+        const { data: payouts, error: payoutsError } = await query
+            .range(offset, offset + limit - 1);
+        
+        if (payoutsError) throw payoutsError;
+        
+        res.json({
+            success: true,
+            data: payouts || []
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching payout history: ' + error.message
+        });
+    }
+}));
+
 module.exports = router;
