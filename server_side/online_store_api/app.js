@@ -35,6 +35,7 @@ app.use('/alerts', require('./routes/alerts'));
 app.use('/events', require('./routes/events'));
 app.use('/sellers', require('./routes/seller'));
 app.use('/post-views', require('./routes/post_views'));
+app.use('/paymongo', require('./routes/paymongo'));
 
 // Root
 app.get('/', asyncHandler(async (req, res) => {
