@@ -316,8 +316,8 @@ router.post('/payout', asyncHandler(async (req, res) => {
           attributes: {
             amount: Math.round(amount * 100), // Convert to centavos
             redirect: {
-              success: successUrl || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payouts/success`,
-              failed: failedUrl || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payouts/failed`,
+              success: successUrl || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/#/payouts/success`,
+              failed: failedUrl || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/#/payouts/failed`,
             },
             type: 'gcash',
             currency: 'PHP',
