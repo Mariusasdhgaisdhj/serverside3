@@ -523,9 +523,10 @@ router.post('/bulk', asyncHandler(async (req, res) => {
 router.post('/:productId/notify', asyncHandler(async (req, res) => {
   try {
     const { productId } = req.params;
-    const { type, sellerId, productName } = req.body || {};
-    if (type !== 'stock_out' || !sellerId || !productId) {
-      return res.status(400).json({ success: false, message: 'type stock_out, sellerId, productId required' });
+    const { type, sellerId, productName, message } = req.body || {};
+    const allowed = new Set(['stock_out', 'product_hidden', 'product_unhidden', 'product_archived', 'product_unarchived']);
+    if (!allowed.has(type) || !sellerId || !productId) {
+      return res.status(400).json({ success: false, message: 'type invalid or sellerId/productId missing' });
     }
 
     const appId = process.env.ONE_SIGNAL_APP_ID;
@@ -535,17 +536,36 @@ router.post('/:productId/notify', asyncHandler(async (req, res) => {
     }
 
     const client = new OneSignal.Client(appId, apiKey);
+    let headings = 'Product Update';
+    let contents = 'Your product was updated.';
+    if (type === 'stock_out') {
+      headings = 'Product out of stock';
+      contents = `'${productName || 'A product'}' is now out of stock. Please restock.`;
+    } else if (type === 'product_hidden') {
+      headings = 'Product Hidden';
+      contents = `'${productName || 'A product'}' was hidden by admin. ${message || ''}`.trim();
+    } else if (type === 'product_unhidden') {
+      headings = 'Product Visible';
+      contents = `'${productName || 'A product'}' is now visible.'`;
+    } else if (type === 'product_archived') {
+      headings = 'Product Archived';
+      contents = `'${productName || 'A product'}' was archived by admin. ${message || ''}`.trim();
+    } else if (type === 'product_unarchived') {
+      headings = 'Product Unarchived';
+      contents = `'${productName || 'A product'}' was restored from archive.'`;
+    }
+
     const resp = await client.createNotification({
       app_id: appId,
       include_external_user_ids: [String(sellerId)],
-      headings: { en: 'Product out of stock' },
-      contents: { en: `'${productName || 'A product'}' is now out of stock. Please restock.` },
+      headings: { en: headings },
+      contents: { en: contents },
       // Ensure notification makes sound on both platforms
       android_sound: 'default',
       ios_sound: 'default',
       android_channel_id: process.env.ONE_SIGNAL_ANDROID_CHANNEL_ID || undefined,
       data: {
-        type: 'stock_out',
+        type,
         product_id: String(productId),
       },
     });
