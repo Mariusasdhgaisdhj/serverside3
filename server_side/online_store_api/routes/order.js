@@ -760,6 +760,26 @@ router.get('/', asyncHandler(async (req, res) => {
 
         let orders = data || [];
 
+        // Determine which orders have completed/processing payouts
+        try {
+            const orderIds = orders.map((o) => o.id);
+            if (orderIds.length > 0) {
+                const { data: payouts } = await supabase
+                    .from('seller_payouts')
+                    .select('order_id, status')
+                    .in('order_id', orderIds);
+                const paidOutSet = new Set(
+                    (payouts || [])
+                        .filter((p) => ['processing', 'completed'].includes((p.status || '').toLowerCase()))
+                        .map((p) => p.order_id)
+                );
+                // Attach helper flag for transformation
+                orders = orders.map((o) => ({ ...o, __paid_out: paidOutSet.has(o.id) }));
+            }
+        } catch (e) {
+            console.warn('Failed to check payouts for orders:', e?.message || e);
+        }
+
         // If sellerId is provided, keep only orders that include at least one item from this seller
         if (sellerId) {
             console.log(`Filtering orders for sellerId: ${sellerId}`);
@@ -832,6 +852,7 @@ router.get('/', asyncHandler(async (req, res) => {
                 companyName: o.billing_addresses[0].company_name,
                 taxId: o.billing_addresses[0].tax_id,
             } : null,
+          paidOut: !!o.__paid_out,
         }));
 
         res.json({ success: true, message: "Orders retrieved successfully.", data: transformed, total });
@@ -1557,6 +1578,50 @@ router.post('/bulk-action', asyncHandler(async (req, res) => {
             message: `Bulk action '${action}' completed with ${results.success.length} successful and ${results.failed.length} failed operations.`, 
             data: results 
         });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// Mark orders as paid out (create payout records)
+router.post('/mark-paidout-bulk', asyncHandler(async (req, res) => {
+    try {
+        const { orderIds, sellerId, payoutMethod = 'gcash', gcashNumber, gcashName, notes } = req.body || {};
+        if (!Array.isArray(orderIds) || orderIds.length === 0) {
+            return res.status(400).json({ success: false, message: 'orderIds are required' });
+        }
+        if (!sellerId) {
+            return res.status(400).json({ success: false, message: 'sellerId is required' });
+        }
+
+        // Fetch orders for totals
+        const { data: orders, error: ordersErr } = await supabase
+            .from('orders')
+            .select('id, total_price, payment_method')
+            .in('id', orderIds);
+        if (ordersErr) throw new Error(ordersErr.message);
+
+        const rows = (orders || []).map((o) => ({
+            seller_id: sellerId,
+            order_id: o.id,
+            amount: o.total_price || 0,
+            fee: 0,
+            net_amount: o.total_price || 0,
+            payment_method: o.payment_method || 'unknown',
+            payout_method: payoutMethod,
+            status: 'completed',
+            payout_info: { gcashNumber, gcashName },
+            notes: notes || null,
+            processed_at: new Date().toISOString(),
+        }));
+
+        // Insert payout records (ignore duplicates on same order)
+        const { error: insertErr } = await supabase
+            .from('seller_payouts')
+            .insert(rows, { upsert: false });
+        if (insertErr) throw new Error(insertErr.message);
+
+        res.json({ success: true, message: 'Orders marked as paid out.', data: { count: rows.length } });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
