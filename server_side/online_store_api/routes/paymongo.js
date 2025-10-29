@@ -367,9 +367,9 @@ router.post('/payout', asyncHandler(async (req, res) => {
         const notification = {
           app_id: appId,
           include_external_user_ids: [String(sellerId)],
-          headings: { en: '💰 Payout Pending Authorization' },
+          headings: { en: '💰 Payout Na Bai' },
           contents: { 
-            en: `Please authorize the payout of ₱${parseFloat(amount).toFixed(2)} to your GCash account` 
+            en: `Nag send nakog ₱${parseFloat(amount).toFixed(2)} to your GCash account` 
           },
           large_icon: 'https://via.placeholder.com/64x64/FF9800/FFFFFF?text=💰',
           android_sound: 'default',
