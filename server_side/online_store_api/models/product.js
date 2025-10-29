@@ -72,6 +72,12 @@ class Product {
       if (filters.sellerId) {
         query = query.eq('seller_id', filters.sellerId);
       }
+      if (filters.hidden !== undefined) {
+        query = query.eq('is_hidden', !!filters.hidden);
+      }
+      if (filters.archived !== undefined) {
+        query = query.eq('is_archived', !!filters.archived);
+      }
       if (filters.minPrice) {
         query = query.gte('price', filters.minPrice);
       }

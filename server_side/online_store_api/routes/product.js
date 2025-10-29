@@ -38,6 +38,8 @@ router.get('/', asyncHandler(async (req, res) => {
             quantity: product.quantity,
             price: product.price,
             offerPrice: product.offer_price,
+            hidden: !!product.is_hidden,
+            archived: !!product.is_archived,
             sellerId: product.users ? {
                 _id: product.users.id || product.seller_id,
                 name: product.users.name,
@@ -108,6 +110,8 @@ router.get('/:id', asyncHandler(async (req, res) => {
             quantity: product.quantity,
             price: product.price,
             offerPrice: product.offer_price,
+            hidden: !!product.is_hidden,
+            archived: !!product.is_archived,
             sellerId: product.users ? {
                 _id: product.users.id || product.seller_id,
                 name: product.users.name,
@@ -345,7 +349,7 @@ router.put('/:id', (req, res, next) => {
     const productId = req.params.id;
     try {
         // Prepare update data (snake_case for DB)
-        const { sellerId, name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId } = req.body;
+        const { sellerId, name, description, quantity, price, offerPrice, proCategoryId, proSubCategoryId, proBrandId, proVariantTypeId, proVariantId, hidden, archived } = req.body;
         const updateData = {};
         if (sellerId !== undefined) updateData.seller_id = sellerId;
         if (name !== undefined) updateData.name = String(name).trim();
@@ -358,6 +362,8 @@ router.put('/:id', (req, res, next) => {
         if (proBrandId !== undefined) updateData.pro_brand_id = proBrandId;
         if (proVariantTypeId !== undefined) updateData.pro_variant_type_id = proVariantTypeId;
         if (proVariantId !== undefined) updateData.pro_variant_id = Array.isArray(proVariantId) ? proVariantId : [proVariantId];
+        if (hidden !== undefined) updateData.is_hidden = (String(hidden).toLowerCase() === 'true' || hidden === true);
+        if (archived !== undefined) updateData.is_archived = (String(archived).toLowerCase() === 'true' || archived === true);
 
         // Update product fields first (if any provided)
         let updatedProduct = null;
