@@ -287,18 +287,106 @@ router.post('/create-auth', asyncHandler(async (req, res) => {
 // User requests to become a seller (pending approval)
 router.post('/:id/request-seller', asyncHandler(async (req, res) => {
     const userID = req.params.id;
-    const { businessName, phone, paypalEmail } = req.body || {};
+    const body = req.body || {};
+    const {
+        businessName,
+        phone,
+        paypalEmail,
+        payoutInfo,
+        address,
+        category,
+        storeDescription,
+        businessRegistrationNumber,
+        taxIdNumber,
+        documents,
+        agreeToTerms
+    } = body;
+
     try {
+        // Upload full barangay clearance image to storage if provided as base64
+        let barangayDocUrl = null;
+        let barangayDocPath = null;
+        let barangayDocMeta = null;
+        if (documents?.barangayClearance?.base64) {
+            try {
+                const dataUrl = String(documents.barangayClearance.base64);
+                const mime = documents.barangayClearance.mimeType || (dataUrl.startsWith('data:') ? dataUrl.split(';')[0].replace('data:', '') : 'image/jpeg');
+                const filename = documents.barangayClearance.filename || `barangay-clearance-${Date.now()}`;
+                const ext = mime.includes('png') ? 'png' : (mime.includes('jpeg') || mime.includes('jpg')) ? 'jpg' : 'jpg';
+                const bucket = 'seller-documents';
+
+                // Strip data URL prefix if present
+                const base64Payload = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+                const fileBuffer = Buffer.from(base64Payload, 'base64');
+                const storagePath = `${userID}/${filename}.${ext}`;
+
+                const { error: uploadErr } = await supabase.storage
+                    .from(bucket)
+                    .upload(storagePath, fileBuffer, { contentType: mime, upsert: true });
+                if (uploadErr) throw uploadErr;
+
+                const { data: pub } = supabase.storage.from(bucket).getPublicUrl(storagePath);
+                barangayDocUrl = pub?.publicUrl || null;
+                barangayDocPath = storagePath;
+                barangayDocMeta = { filename: `${filename}.${ext}`, mimeType: mime };
+            } catch (e) {
+                console.error('Barangay clearance upload failed:', e?.message || e);
+            }
+        }
+
+        // Build payoutinfo JSONB (merge of known fields)
+        const payout = {
+            gcashName: payoutInfo?.gcashName || null,
+            gcashNumber: payoutInfo?.gcashNumber || null,
+            bankName: payoutInfo?.bankName || null,
+            bankAccountName: payoutInfo?.bankAccountName || null,
+            bankAccountNumber: payoutInfo?.bankAccountNumber || null,
+            paypalEmail: paypalEmail || payoutInfo?.paypalEmail || null,
+        };
+
+        // Build addressinfo JSON
+        const addr = address ? {
+            line1: address.line1 || null,
+            city: address.city || null,
+            province: address.province || null,
+            postalCode: address.postalCode || null,
+        } : null;
+
+        // Only persist document metadata (avoid storing full base64)
+        const barangayMeta = documents?.barangayClearance ? {
+            filename: documents.barangayClearance.filename || null,
+            mimeType: documents.barangayClearance.mimeType || null,
+            // preview is optional small sample for debugging, not full image
+            preview: documents.barangayClearance.base64 ? String(documents.barangayClearance.base64).slice(0, 64) : null,
+        } : null;
+
+        const sellerApplication = {
+            category: category || null,
+            storeDescription: storeDescription || null,
+            businessRegistrationNumber: businessRegistrationNumber || null,
+            taxIdNumber: taxIdNumber || null,
+            agreeToTerms: !!agreeToTerms,
+            documents: {
+                barangayClearance: {
+                    ...(barangayMeta || {}),
+                    url: barangayDocUrl,
+                    path: barangayDocPath,
+                },
+            },
+        };
+
         const updateData = {
             seller_request: 'pending',
             business_name: businessName || null,
             phone: phone || null,
-            paypal_email: paypalEmail || null,
+            paypal_email: payout.paypalEmail || null,
+            payoutinfo: payout,
+            addressinfo: addr ? { ...(addr || {}), seller_application: sellerApplication } : { seller_application: sellerApplication },
             updated_at: new Date().toISOString(),
         };
+
         const user = await User.update(userID, updateData);
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-        // Optional: notify admins via notifications table if you track admin IDs
         return res.json({ success: true, message: 'Seller request submitted', data: user });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
@@ -329,6 +417,35 @@ router.post('/:id/approve-seller', asyncHandler(async (req, res) => {
         } catch (_) {}
 
         return res.json({ success: true, message: 'Seller approved', data: user });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+}));
+
+// Admin rejects seller request -> keep role as buyer and mark request rejected
+router.post('/:id/reject-seller', asyncHandler(async (req, res) => {
+    const userID = req.params.id;
+    const { reason } = req.body || {};
+    try {
+        const user = await User.update(userID, {
+            role: 'buyer',
+            seller_request: 'rejected',
+            updated_at: new Date().toISOString(),
+        });
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Create in-app notification for the user
+        try {
+            await supabase.from('notifications').insert({
+                user_id: userID,
+                title: 'Seller Request Rejected',
+                message: reason ? `Your seller request was rejected: ${reason}` : 'Your seller request was rejected.',
+                type: 'seller_rejected',
+                is_read: false,
+            });
+        } catch (_) {}
+
+        return res.json({ success: true, message: 'Seller request rejected', data: user });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
     }
