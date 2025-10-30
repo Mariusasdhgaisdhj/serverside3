@@ -416,6 +416,29 @@ router.post('/:id/approve-seller', asyncHandler(async (req, res) => {
             });
         } catch (_) {}
 
+        // Send push notification (if OneSignal configured)
+        try {
+            const appId = process.env.ONE_SIGNAL_APP_ID;
+            const apiKey = process.env.ONE_SIGNAL_REST_API_KEY;
+            if (appId && apiKey) {
+                const client = new OneSignal.Client(appId, apiKey);
+                const notificationBody = {
+                    app_id: appId,
+                    include_external_user_ids: [String(userID)],
+                    headings: { en: 'Seller Request Approved' },
+                    contents: { en: 'Your request was approved. You can now start selling.' },
+                    android_sound: 'default',
+                    ios_sound: 'default',
+                    priority: 10,
+                    android_channel_id: process.env.ONE_SIGNAL_ANDROID_CHANNEL_ID || undefined,
+                    data: { type: 'seller_approved', user_id: String(userID), approved_at: new Date().toISOString() }
+                };
+                await client.createNotification(notificationBody);
+            }
+        } catch (pushErr) {
+            console.warn('Approve push notification failed:', pushErr?.message || pushErr);
+        }
+
         return res.json({ success: true, message: 'Seller approved', data: user });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
@@ -444,6 +467,29 @@ router.post('/:id/reject-seller', asyncHandler(async (req, res) => {
                 is_read: false,
             });
         } catch (_) {}
+
+        // Send push notification (if OneSignal configured)
+        try {
+            const appId = process.env.ONE_SIGNAL_APP_ID;
+            const apiKey = process.env.ONE_SIGNAL_REST_API_KEY;
+            if (appId && apiKey) {
+                const client = new OneSignal.Client(appId, apiKey);
+                const notificationBody = {
+                    app_id: appId,
+                    include_external_user_ids: [String(userID)],
+                    headings: { en: 'Seller Request Rejected' },
+                    contents: { en: reason ? `Rejected: ${reason}` : 'Your seller request was rejected.' },
+                    android_sound: 'default',
+                    ios_sound: 'default',
+                    priority: 10,
+                    android_channel_id: process.env.ONE_SIGNAL_ANDROID_CHANNEL_ID || undefined,
+                    data: { type: 'seller_rejected', user_id: String(userID), reason: reason || null, rejected_at: new Date().toISOString() }
+                };
+                await client.createNotification(notificationBody);
+            }
+        } catch (pushErr) {
+            console.warn('Reject push notification failed:', pushErr?.message || pushErr);
+        }
 
         return res.json({ success: true, message: 'Seller request rejected', data: user });
     } catch (error) {
