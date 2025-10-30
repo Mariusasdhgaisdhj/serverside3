@@ -8,7 +8,9 @@ dotenv.config();
 
 const app = express();
 app.use(cors({ origin: '*' }));
-app.use(bodyParser.json());
+// Increase body size limit to 50MB to handle base64 images in seller requests
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 // Test Supabase connection
 testConnection().then(connected => {
