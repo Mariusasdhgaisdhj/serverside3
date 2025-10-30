@@ -313,7 +313,7 @@ router.post('/:id/request-seller', asyncHandler(async (req, res) => {
                 const mime = documents.barangayClearance.mimeType || (dataUrl.startsWith('data:') ? dataUrl.split(';')[0].replace('data:', '') : 'image/jpeg');
                 const filename = documents.barangayClearance.filename || `barangay-clearance-${Date.now()}`;
                 const ext = mime.includes('png') ? 'png' : (mime.includes('jpeg') || mime.includes('jpg')) ? 'jpg' : 'jpg';
-                const bucket = 'seller-documents';
+                const bucket = process.env.SUPABASE_SELLER_DOCS_BUCKET || 'product-images';
 
                 // Strip data URL prefix if present
                 const base64Payload = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
